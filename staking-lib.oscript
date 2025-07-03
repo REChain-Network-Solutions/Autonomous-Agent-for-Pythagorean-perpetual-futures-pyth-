@@ -1,0 +1,105 @@
+{
+	getters: `{
+		
+		$distribute_staker_fees = ($state, $aa_state, $user_perp) => {
+			$user_share = $user_perp.normalized_vp/$state.total_normalized_vp;
+
+			$new_fees_since_prev_visit = $aa_state.total_staker_fees - $user_perp.last_perp_emissions.r;
+			$user_perp.last_perp_emissions.r = $aa_state.total_staker_fees;
+
+			$reward = $new_fees_since_prev_visit * $user_share;
+			$user_perp.rewards.r = $user_perp.rewards.r + $reward;
+		};
+
+		$distribute_emissions = ($state, $perp, $user_perp, $perp_vps, $total_perp_balance, $emissions, $bAsset0, $aa_state) => {
+			if (!$state.total_normalized_vp)
+				return;
+			
+			if ($bAsset0)
+				$distribute_staker_fees($state, $aa_state, $user_perp);
+			
+			$perp_share = $perp_vps[$perp.asset_key]/$state.total_normalized_vp;
+			$user_share = $bAsset0 
+				? $user_perp.normalized_vp/$state.total_normalized_vp 
+				: ($total_perp_balance ? $user_perp.balance/$total_perp_balance : 0);
+
+			foreach($emissions, 15, ($reward_asset_key, $asset_emissions) => {
+				// if re-whitelisted
+				if ($asset_emissions < ($perp.last_emissions[$reward_asset_key] OTHERWISE 0)){
+					$perp.last_emissions[$reward_asset_key] = 0;
+					$perp.received_emissions[$reward_asset_key] = 0;
+				}
+				if (($perp.received_emissions[$reward_asset_key] OTHERWISE 0) < ($user_perp.last_perp_emissions[$reward_asset_key] OTHERWISE 0))
+					$user_perp.last_perp_emissions[$reward_asset_key] = 0;
+				
+				$new_total_emissions_since_prev_visit = $asset_emissions - $perp.last_emissions[$reward_asset_key];
+				$perp.received_emissions[$reward_asset_key] = $perp.received_emissions[$reward_asset_key] + $new_total_emissions_since_prev_visit * $perp_share;
+				$perp.last_emissions[$reward_asset_key] = $asset_emissions;
+
+				$new_emissions_since_prev_visit = $perp.received_emissions[$reward_asset_key] - $user_perp.last_perp_emissions[$reward_asset_key];
+				$user_perp.last_perp_emissions[$reward_asset_key] = $perp.received_emissions[$reward_asset_key];
+
+				$reward = $new_emissions_since_prev_visit * $user_share;
+				$user_perp.rewards[$reward_asset_key] = $user_perp.rewards[$reward_asset_key] + $reward;
+			});
+		};
+
+		$distribute_new_vp = ($votes, $perp_vps, $delta_normalized_vp, $percentages) => {
+			$totals = {total: 0};
+			foreach($percentages, 20, ($perp_asset_key, $percentage) => {
+				require(+substring($perp_asset_key, 1) >= 0 AND starts_with($perp_asset_key, 'a'), "invalid perp asset key "||$perp_asset_key);
+				require($percentage > 0, "invalid percentage "||$percentage);
+				require(exists($perp_vps[$perp_asset_key]), "perp asset key "||$perp_asset_key||" not found in this group");
+				$totals.total = $totals.total + $percentage;
+				$added_vp = $percentage/100 * $delta_normalized_vp;
+				$votes[$perp_asset_key] = $votes[$perp_asset_key] + $added_vp;
+				$perp_vps[$perp_asset_key] = $perp_vps[$perp_asset_key] + $added_vp;
+			});
+			require($totals.total == 100, "percentages sum to "||$totals.total);
+			require(length($votes) <= 30, "max total number of supported perps is 30");
+			$perp_vps.total = $perp_vps.total + $delta_normalized_vp;
+		};
+
+
+		$apply_vote = ($votes, $perp_vps, $group_key1, $group_key2, $group_vps, $changes) => {
+			$totals = {total: 0, max: 0};
+			foreach($changes, 20, ($perp_asset_key, $delta_vp) => {
+				require(+substring($perp_asset_key, 1) >= 0 AND starts_with($perp_asset_key, 'a'), "invalid perp asset key "||$perp_asset_key);
+				$votes[$perp_asset_key] = $votes[$perp_asset_key] + $delta_vp;
+				$p = $votes[$perp_asset_key];
+				require($p >= 0, "would have negative votes for perp_asset_key "||$perp_asset_key);
+				if ($p == 0)
+					delete($votes, $perp_asset_key);
+				$totals.total = $totals.total + $delta_vp;
+				if (abs($delta_vp) > $totals.max)
+					$totals.max = abs($delta_vp);
+				if (exists($perp_vps[$group_key1][$perp_asset_key]))
+					$group_key = $group_key1;
+				else if ($group_key2 AND exists($perp_vps[$group_key2][$perp_asset_key]))
+					$group_key = $group_key2;
+				else
+					bounce("perp asset key "||$perp_asset_key||" not found in any of the two groups");
+				$perp_vps[$group_key][$perp_asset_key] = $perp_vps[$group_key][$perp_asset_key] + $delta_vp;
+				$perp_vps[$group_key].total = $perp_vps[$group_key].total + $delta_vp;
+				$group_vps[$group_key] = $group_vps[$group_key] + $delta_vp;
+			});
+			require(abs($totals.total) < $totals.max * 1e-14, "total votes changed by "||$totals.total); // allow some rounding error
+			require(length($votes) <= 30, "max total number of supported perps is 30");
+		};
+
+		$remove_votes = ($votes, $perp_vps) => {
+			foreach($votes, 30, ($perp_asset_key, $vp) => {
+				require(exists($perp_vps[$perp_asset_key]), "perp asset key "||$perp_asset_key||" not found in the indicated group");
+				$perp_vps[$perp_asset_key] = $perp_vps[$perp_asset_key] - $votes[$perp_asset_key];
+			});
+		};
+
+
+	}`,
+	messages: [{
+		app: 'state',
+		state: `{
+			bounce("library only");
+		}`
+	}]
+}

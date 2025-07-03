@@ -1,0 +1,11 @@
+{
+	getters: `{
+		$get_target_price = () => data_feed[[oracles=params.oracle, feed_name=params.feed_name]] * (params.multiplier OTHERWISE 1);
+	}`,
+	messages: [{
+		app: 'state',
+		state: `{
+			bounce('lib only');
+		}`
+	}]
+}

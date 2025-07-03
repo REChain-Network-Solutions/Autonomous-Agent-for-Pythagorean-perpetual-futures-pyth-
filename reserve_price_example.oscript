@@ -1,0 +1,14 @@
+{
+	getters: `{
+		// return price in usd
+		// example with data_feed: 
+		// $get_reserve_price = () => data_feed[[oracles=params.oracle, feed_name=params.feed_name, ifnone=false]]
+		$get_reserve_price = () => 10;
+	}`,
+	messages: [{
+		app: 'state',
+		state: `{
+			bounce('lib only');
+		}`
+	}]
+}

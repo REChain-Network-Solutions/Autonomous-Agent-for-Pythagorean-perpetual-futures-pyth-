@@ -1,18 +1,54 @@
-# Build and Release Folders
-bin-debug/
-bin-release/
-[Oo]bj/
-[Bb]in/
+testdata/*/
+yarn-error.log
+*.log
 
-# Other files and folders
-.settings/
+# Coverage directory used by tools like istanbul
+coverage
 
-# Executables
-*.swf
-*.air
-*.ipa
-*.apk
+# Grunt intermediate storage (http://gruntjs.com/creating-plugins#storing-task-files)
+.grunt
 
-# Project files, i.e. `.project`, `.actionScriptProperties` and `.flexProperties`
-# should NOT be excluded as they contain compiler settings and other important
-# information for Eclipse / Flash Builder.
+# Dependency directory
+# Commenting this out is preferred by some people, see
+# https://www.npmjs.org/doc/misc/npm-faq.html#should-i-check-my-node_modules-folder-into-git-
+node_modules
+
+# Yarn package manager
+yarn.lock
+
+# npm
+package-lock.json
+
+# OSX
+
+.DS_Store
+.AppleDouble
+.LSOverride
+
+
+# Files that might appear on external disk
+.Spotlight-V100
+.Trashes
+
+# Directories potentially created on remote AFP share
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# VIM ignore
+
+[._]*.s[a-w][a-z]
+[._]s[a-w][a-z]
+*.un~
+Session.vim
+.netrwhist
+*~
+
+# IDEA IntelliJ
+
+*.iml
+.idea
+
+.testdata-*

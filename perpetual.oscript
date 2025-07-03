@@ -1,0 +1,630 @@
+{
+	doc_url: "https://pyth.ooo/perpetual.json",
+	getters: `{
+
+		$trade_merge_period = 1; // seconds
+
+		$get_param = ($name, $default) => {
+			$value = var[$name];
+			exists($value) ? $value : (exists(params[$name]) ? params[$name] : $default)
+		};
+
+		$get_swap_fee = () => $get_param('swap_fee', 0.003);
+		$get_arb_profit_tax = () => $get_param('arb_profit_tax', 0.9);
+		$get_adjustment_period = () => $get_param('adjustment_period', 3 * 24 * 3600); // 3 days
+		$get_presale_period = () => $get_param('presale_period', 14 * 24 * 3600); // 14 days
+		$get_auction_price_halving_period = () => $get_param('auction_price_halving_period', 3 * 24 * 3600); // 3 days
+		$get_token_share_threshold = () => $get_param('token_share_threshold', 0.1); // 10%
+		$get_min_s0_share = () => $get_param('min_s0_share', 0.01); // 1%
+		$get_stakers_fee_share = () => $get_param('stakers_fee_share', 0.5); // 50%
+		$get_reserve_price_aa = () => $get_param('reserve_price_aa');
+
+		$pow2 = $x => $x*$x;
+		
+		$adjust_prices = ($asset, $asset_info, $state) => {
+			if ($state.asset0 == $asset)
+				return;
+			
+			$elapsed = timestamp - $asset_info.last_ts;
+			$asset_info.last_ts = timestamp;
+
+			if ($asset_info.presale AND $asset_info.preipo){
+				$target_price = $asset_info.last_auction_price;
+			}
+			else{
+				$price_aa = $asset_info.price_aa;
+				if (!$price_aa)
+					return;
+				// $target_price is in terms of the reserve currency.
+				// Both $get_target_price() and $get_reserve_price() return prices in USD (or some other common currency)
+				$target_price = $price_aa#3.$get_target_price() / $get_reserve_price_aa()#8.$get_reserve_price();
+				if (typeof($target_price) != 'number' OR $target_price < 0)
+					return;
+			}
+			
+			if ($asset_info.presale){
+				if (
+					$asset_info.presale_amount
+					AND (
+						timestamp >= $asset_info.presale_finish_ts 
+						OR $asset_info.presale_amount >= $get_token_share_threshold() * $state.reserve
+						// we can exceed max_tokens
+						OR $asset_info.preipo AND $asset_info.presale_amount / $target_price >= $asset_info.max_tokens
+					)
+				){ // add the reserve and launch trading
+					delete($asset_info, 'presale');
+					$asset_info.initial_price = $target_price;
+					$asset_info.supply = floor($asset_info.presale_amount / $target_price);
+					$asset_info.a = $pow2($target_price / $state.coef) * $state.reserve/$asset_info.presale_amount;
+					$new_reserve = $state.reserve + $asset_info.presale_amount;
+					$state.coef = $state.coef * sqrt($new_reserve/$state.reserve);
+					$state.reserve = $new_reserve;
+				}
+				return;
+			}
+
+			$r = $state.reserve;
+			$c = $state.coef;
+			$s = $asset_info.supply;
+			$a = $asset_info.a;
+			$p = $c*$c * $a * $s / $r;
+			$s0 = $state.s0;
+
+			if (!$s)
+				return;
+
+			$full_delta_p = $target_price - $p;
+			$adjustment_period = $get_adjustment_period();
+			$delta_p = $elapsed >= $adjustment_period ? $full_delta_p : $elapsed/$adjustment_period*$full_delta_p;
+
+		//	$delta_a = $a * $delta_p/$p; // >= -$a
+		//	$asset_info.a = $asset_info.a + $delta_a; // stays positive
+		//	$state.coef = $c / sqrt(1 + $delta_a * $pow2($s * $c / $r));
+
+			$new_c = $c * sqrt(1 - $s * $r * $delta_p / ($r*$r - $a * $pow2($c * $s)));
+			require(($new_c - $c) * $delta_p <= 0, "c should change opposite to p");
+			$new_a = ($p + $delta_p) * $r / $new_c/$new_c / $s;
+			require(($new_a - $a) * $delta_p >= 0, "a should change as p");
+			$asset_info.a = $new_a;
+			$state.coef = $new_c;
+
+			// apply drift that slowly depreciates p and moves the wealth to s0 holders
+			if ($asset_info.drift_rate){
+				$relative_price_drift = $elapsed/360/24/3600 * $asset_info.drift_rate;
+				if ($relative_price_drift < 1){
+					$asset_info.a = $asset_info.a * (1 - $relative_price_drift);
+					$state.a0 = $state.a0 + $pow2($s/$s0) * $asset_info.a * $relative_price_drift;
+					require($state.a0 > 0, "a0 would become negative");
+				}
+			}
+			
+			// keeping s0 share above some minimum
+			$a0 = $state.a0;
+			$c1 = $state.coef;
+			$s0_share = $a0 * $pow2($s0 * $c1 / $r);
+			$min_s0_share = $get_min_s0_share();
+			if ($s0_share < $min_s0_share){
+				$new_a0 = ($pow2($r/$c1/$s0) - $a0) / (1/$min_s0_share - 1);
+				$new_c2 = $r/$s0 * sqrt($min_s0_share/$new_a0);
+				require($new_a0 > $a0, "a0 should grow");
+				require($new_c2 < $c, "c should fall");
+				$state.a0 = $new_a0;
+				$state.coef = $new_c;
+			}
+		};
+
+
+		$get_auction_price = ($asset) => {
+			$state = var['state'];
+			$asset_info = var['asset_'||$asset];
+			require($asset_info, "no such asset");
+			require($asset_info.preipo, "not a pre-IPO");
+			$asset_info.initial_auction_price / 2^((timestamp - $asset_info.creation_ts)/$get_auction_price_halving_period())
+		};
+
+		$get_price = ($asset, $bWithPriceAdjustment) => {
+			$state = var['state'];
+			$bAsset0 = $state.asset0 == $asset;
+			if (!$bAsset0) {
+				$asset_info = var['asset_'||$asset];
+				require($asset_info, "no such asset");
+				if ($bWithPriceAdjustment)
+					$adjust_prices($asset, $asset_info, $state);
+			}
+			$r = $state.reserve;
+			$c = $state.coef;
+			$s = $bAsset0 ? $state.s0 : $asset_info.supply;
+			$a = $bAsset0 ? $state.a0 : $asset_info.a;
+			$p = $c*$c * $a * $s / $r;
+			$p
+		};
+
+
+		$get_exchange_result_by_state = ($tokens, $delta_r, $asset, $asset_info, $state, $trigger_initial_address) => {
+			require($tokens > 0 AND $delta_r == 0 OR $tokens == 0 AND $delta_r > 0, "invalid input");
+
+			$op = $tokens ? 'sell' : 'buy';
+			$bAsset0 = $state.asset0 == $asset;
+
+			$r = $state.reserve;
+			$c = $state.coef;
+			$a0 = $state.a0;
+			$s = $bAsset0 ? $state.s0 : $asset_info.supply;
+			$a = $bAsset0 ? $state.a0 : $asset_info.a;
+			$p = $s ? $c*$c * $a * $s / $r : 0;
+		//	log('p = ', $p);
+			$bInitial = $bAsset0 AND ($r == 0);
+
+			$key = 'last_'||$op;
+			$last_trade = $bAsset0 ? $state[$key] : $asset_info[$key];
+			$bMerge = (timestamp <= $last_trade.ts + $trade_merge_period AND $trigger_initial_address == $last_trade.address);
+			$recent_tax = $bMerge ? $last_trade.tax : 0;
+			$recent_delta_s = $bMerge ? $last_trade.delta_s : 0;
+			$initial_p = $bMerge ? ($tokens ? max($p, $last_trade.initial_p) : min($p, $last_trade.initial_p)) : $p;
+
+			$swap_fee_rate = $bInitial ? 0 : $get_swap_fee();
+			$arb_profit_tax_rate = $bInitial ? 0 : $get_arb_profit_tax();
+			$stakers_fee_share = $get_stakers_fee_share();
+			$a0_fee_share = 1 - $stakers_fee_share;
+
+			$get_new_s = ($new_r, $fee_rate) => sqrt($s*$s + ($new_r*$new_r - $r*$r)/$c/$c/$a * (1 - $fee_rate));
+			$get_new_r = ($new_s, $fee_rate) => sqrt($r*$r + ($new_s*$new_s - $s*$s)*$c*$c*$a * (1 - $fee_rate));
+
+			if ($tokens) { // selling tokens
+				$delta_s = -$tokens;
+				$new_s = $s - $tokens;
+				$new_r1 = $get_new_r($new_s, $swap_fee_rate);
+				$new_a1 = $bAsset0 ? ($a * $s*$s + ($new_r1*$new_r1 - $r*$r)/$c/$c)/$new_s/$new_s : $a;
+				$new_p1 = $c*$c * $new_a1 * $new_s / $new_r1;
+				require($new_p1 < $p OR abs($new_p1 - $p)/$p < $swap_fee_rate, "price should go down when selling, got "||$p||" => "||$new_p1);
+				$arb_profit_tax = $arb_profit_tax_rate * abs($initial_p - $new_p1) * ($tokens - $recent_delta_s) / 2 - $recent_tax;
+				require($arb_profit_tax >= 0, "negative arb profit tax "||$arb_profit_tax);
+				$full_fee_rate = $swap_fee_rate + $arb_profit_tax/($r - $new_r1);
+				require($full_fee_rate < 1, "fee would exceed 100%");
+				$new_r_gross = ceil($get_new_r($new_s, $full_fee_rate));
+				require($new_r_gross <= $r, "r_gross would increase to "||$new_r_gross);
+				$new_r = ceil($get_new_r($new_s, $full_fee_rate * $a0_fee_share));
+				require($new_r <= $r, "r would increase to "||$new_r);
+				$staker_fee = $new_r_gross - $new_r;
+				require($staker_fee >= 0, "negative staker fee "||$staker_fee);
+				$payout = $r - $new_r_gross;
+				$swap_fee = $swap_fee_rate * $payout;
+				$total_fee = $swap_fee + $arb_profit_tax;
+			//	$new_r = $net_new_r + $swap_fee;
+			}
+			else { // buying tokens
+				$new_r_gross = $r + $delta_r;
+				$swap_fee = $swap_fee_rate * $delta_r;
+				$new_s1 = $get_new_s($new_r_gross, $swap_fee_rate);
+			//	log('new_s1 = ', $new_s1, 'delta', $new_s1 - $s);
+				$new_a1 = $bAsset0 ? ($a * $s*$s + ($new_r_gross*$new_r_gross - $r*$r)/$c/$c)/$new_s1/$new_s1 : $a;
+				$new_p1 = $c*$c * $new_a1 * $new_s1 / $new_r_gross;
+			//	log('new_p1 = ', $new_p1, 'delta', $new_p1 - $p);
+				require($new_p1 > $p, "price should go up when buying, got "||$p||" => "||$new_p1);
+				$arb_profit_tax = $arb_profit_tax_rate * ($new_p1 - $initial_p) * ($new_s1 - $s + $recent_delta_s) / 2 - $recent_tax;
+				require($arb_profit_tax >= 0, "negative arb profit tax "||$arb_profit_tax);
+
+				$total_fee = $swap_fee + $arb_profit_tax;
+				$staker_fee = floor($total_fee * $stakers_fee_share);
+				$full_fee_rate = $swap_fee_rate + $arb_profit_tax/$delta_r;
+				require($full_fee_rate < 1, "fee would exceed 100%");
+				$new_r = $new_r_gross - $staker_fee;
+				$new_s = floor($get_new_s($new_r, $full_fee_rate * $a0_fee_share)); // rounding is like an additional fee
+			//	log('new_s = ', $new_s);
+				$delta_s = $new_s - $s;
+				require($delta_s >= 0, "s would decrease by "||$delta_s);
+			}
+			$state.a0 = $bAsset0
+				? ($state.a0 * $s*$s + ($new_r*$new_r - $r*$r)/$c/$c)/$new_s/$new_s
+				: $a0 + (($new_r*$new_r - $r*$r)/$c/$c - $a * ($new_s*$new_s - $s*$s))/$state.s0/$state.s0;
+			require($state.a0 >= $a0, "a0 should grow "||$a0||" => "||$state.a0);
+
+			$state.reserve = $new_r;
+			if ($bAsset0)
+				$state.s0 = $new_s;
+			else
+				$asset_info.supply = $new_s;
+			
+			$new_p = $c*$c * $a * $new_s / $new_r; // fix
+		//	log('new_p = ', $new_p);
+			
+		//	if ($tokens)
+		//		$arb_profit_tax = $arb_profit_tax_rate * abs(($new_p - $p) * ($new_s - $s) / 2);
+
+			$fee_percent = $total_fee / ($tokens ? $payout : $delta_r) * 100;
+			$state.total_staker_fees = $state.total_staker_fees + $staker_fee;
+
+			if ($bAsset0){
+				$state[$key].delta_s = ($bMerge ? $last_trade.delta_s : 0) + $delta_s;
+				$state[$key].initial_p = $initial_p;
+				$state[$key].tax = $arb_profit_tax;
+				$state[$key].ts = timestamp;
+				$state[$key].address = $trigger_initial_address;
+			}
+			else {
+				$asset_info[$key].delta_s = ($bMerge ? $last_trade.delta_s : 0) + $delta_s;
+				$asset_info[$key].initial_p = $initial_p;
+				$asset_info[$key].tax = $arb_profit_tax;
+				$asset_info[$key].ts = timestamp;
+				$asset_info[$key].address = $trigger_initial_address;
+			}
+
+			{
+				payout: $payout,
+				delta_s: $delta_s,
+				old_reserve: $r,
+				new_reserve: $new_r,
+				delta_reserve: $new_r - $r,
+				old_price: $p,
+				new_price: $new_p,
+				swap_fee: $swap_fee,
+				arb_profit_tax: $arb_profit_tax,
+				total_fee: $total_fee,
+				fee_percent: $fee_percent,
+			}
+		};
+
+		$get_exchange_result = ($asset, $tokens, $delta_r) => {
+			$state = var['state'];
+			if ($asset != $state.asset0){
+				$asset_info = var['asset_'||$asset];
+				require($asset_info, "no such asset");
+				$adjust_prices($asset, $asset_info, $state);
+			}
+			$get_exchange_result_by_state($tokens, $delta_r, $asset, $asset_info, $state, 'ADDRESS')
+		};
+
+
+
+	}`,
+	init: `{
+
+		$reserve_asset = params.reserve_asset;
+		
+		// reserve
+		$min_contribution = ($reserve_asset == 'base') ? 99999 : 0;
+		$network_fee = ($reserve_asset == 'base') ? 1000 : 0;
+
+		$state = var['state'];
+
+		// tokens
+		$asset = trigger.data.asset;
+
+		if ($asset AND $asset != $state.asset0){
+			$asset_info = var['asset_'||$asset];
+			require($asset_info, "no such asset");
+			$adjust_prices($asset, $asset_info, $state);
+		}
+
+		if (trigger.data.to AND !is_valid_address(trigger.data.to))
+			bounce("bad to address");
+		$to = trigger.data.to OTHERWISE trigger.address;
+
+
+		$staking_base_aa = 'HPJQ6ZCB2T3JTIVAMDM5QESZWNJNJERO';
+
+	}`,
+	messages: {
+		cases: [
+
+			// 0. define the asset0 and staking AA
+			{
+				if: `{ trigger.data.define AND !$state }`,
+				init: `{
+					$params = {aa: this_address};
+					if (params.challenging_period)
+						$params.challenging_period = params.challenging_period;
+					if (params.max_term)
+						$params.max_term = params.max_term;
+					if (params.min_term)
+						$params.min_term = params.min_term;
+					if (params.decay_factor)
+						$params.decay_factor = params.decay_factor;
+					if (params.max_drift_rate)
+						$params.max_drift_rate = params.max_drift_rate;
+					$staking_aa = [
+						'autonomous agent',
+						{
+							base_aa: $staking_base_aa,
+							params: $params
+						}
+					];
+					$staking_aa_address = chash160($staking_aa);
+
+				}`,
+				messages: [
+					{
+						app: 'asset',
+						payload: {
+							// without cap
+							is_private: false,
+							is_transferrable: true,
+							auto_destroy: false,
+							fixed_denominations: false,
+							issued_by_definer_only: true,
+							cosigned_by_definer: false,
+							spender_attested: false,
+						}
+					},
+					{ // define staking AA
+						app: 'definition',
+						payload: {
+							definition: `{$staking_aa}`
+						}
+					},
+					{
+						app: 'payment',
+						payload: {
+							asset: 'base',
+							outputs: [
+								{ address: "{ $staking_aa_address }", amount: 1000 },
+							]
+						}
+					},
+					{
+						app: 'state',
+						state: `{
+							var['staking_aa'] = $staking_aa_address;
+							var['state'] = {asset0: response_unit, a0: 1, s0: 0, reserve: 0, coef: 1, total_staker_fees: 0};
+							response['asset'] = response_unit;
+						}`
+					}
+				]
+			},
+		
+
+			// accept variable changes from the staking AA
+			{
+				if: `{ trigger.address == var['staking_aa'] AND trigger.data.name }`, // trigger.data.value can be falsy
+				init: `{
+					$name = trigger.data.name;
+					$value = trigger.data.value;
+					if ($name == 'add_price_aa'){
+						require($value == 'yes', "can't remove asset");
+						require(trigger.data.price_aa, "no price_aa");
+					}
+					else if ($name == 'change_price_aa' OR $name == 'change_drift_rate'){
+						require($asset, "no asset");
+						if ($name == 'change_price_aa' AND $asset_info.price_aa)
+							bounce("only preipo can set a price AA");
+					}
+					else if ($name == 'add_preipo'){
+						require($value == 'yes', "can't remove preipo");
+						require(trigger.data.symbol, "no symbol");
+						require(trigger.data.initial_auction_price, "no initial_auction_price");
+						require(trigger.data.max_tokens, "no max_tokens");
+					}
+					$bAddNewAsset = ($name == 'add_price_aa' OR $name == 'add_preipo');
+				}`,
+				messages: [
+					{
+						if: `{$bAddNewAsset}`,
+						app: 'asset',
+						payload: {
+							// without cap
+							is_private: false,
+							is_transferrable: true,
+							auto_destroy: false,
+							fixed_denominations: false,
+							issued_by_definer_only: true,
+							cosigned_by_definer: false,
+							spender_attested: false,
+						}
+					},
+					{ // call back to staking AA to init the new perp asset
+						if: `{$bAddNewAsset}`,
+						app: 'payment',
+						payload: {
+							asset: 'base',
+							outputs: [
+								{address: "{trigger.address}", amount: 1000}
+							]
+						}
+					},
+					{
+						app: 'state',
+						state: `{
+							if ($bAddNewAsset){
+								response['asset'] = response_unit;
+								$a_info = { // start a presale
+								//	supply: 0, 
+								//	a: 1, 
+									last_ts: timestamp, 
+									presale: true, 
+									presale_amount: 0, 
+									creation_ts: timestamp,
+									presale_finish_ts: timestamp + $get_presale_period(),
+								};
+								if ($name == 'add_price_aa')
+									$a_info.price_aa = trigger.data.price_aa;
+								else {
+									$a_info.preipo = true;
+									$a_info.symbol = trigger.data.symbol;
+									$a_info.initial_auction_price = trigger.data.initial_auction_price;
+									$a_info.last_auction_price = trigger.data.initial_auction_price;
+									$a_info.max_tokens = trigger.data.max_tokens;
+								}
+								var['asset_'||response_unit] = $a_info;
+							}
+							else if ($name == 'change_price_aa' OR $name == 'change_drift_rate'){
+								$asset_info[$name == 'change_price_aa' ? 'price_aa' : 'drift_rate'] = $value;
+								var['asset_'||$asset] = $asset_info;
+								var['state'] = $state; // we adjusted prices since we had asset in trigger.data
+							}
+							else
+								var[$name] = $value;
+						}`
+					}
+				]
+			},
+
+			// withdraw staker fees
+			{
+				if: `{trigger.data.withdraw_staker_fees AND trigger.address == var['staking_aa']}`,
+				messages: [
+					{ // send the accumulated reward
+						app: 'payment',
+						payload: {
+							asset: `{$reserve_asset}`,
+							outputs: [
+								{address: "{trigger.data.address}", amount: "{ trigger.data.amount }"},
+							]
+						}
+					},
+				]
+			},
+
+			// accept initial contributions for presale assets
+			{
+				if: `{
+					if (!($state AND $asset AND trigger.data.presale))
+						return false;
+					$in_amount = trigger.output[[asset=$reserve_asset]];
+					$bAdd = $in_amount > $min_contribution;
+					$bWithdraw = $in_amount <= $min_contribution AND is_integer(trigger.data.withdraw_amount) AND trigger.data.withdraw_amount > 0;
+					$bAdd OR $bWithdraw
+				}`,
+				init: `{
+					require($asset_info.presale, "already launched");
+					require($asset_info.presale_finish_ts >= timestamp, "presale finished");
+					if ($bAdd)
+						$delta = $in_amount;
+					else { // withdraw
+						$contribution = var['contribution_'||trigger.address||'_'||$asset];
+						require(trigger.data.withdraw_amount <= $contribution, "you have only "||$contribution);
+						$delta = -trigger.data.withdraw_amount;
+					}
+				}`,
+				messages: [
+					{ // send the withdrawal
+						if: `{$bWithdraw}`,
+						app: 'payment',
+						payload: {
+							asset: `{$reserve_asset}`,
+							outputs: [
+								{address: "{$to}", amount: "{ trigger.data.withdraw_amount }"}
+							]
+						}
+					},
+					{
+						app: 'state',
+						state: `{
+							var['contribution_'||trigger.address||'_'||$asset] += $delta;
+							$asset_info.presale_amount = $asset_info.presale_amount + $delta;
+							if ($asset_info.preipo AND $bAdd)
+								$asset_info.last_auction_price = $asset_info.initial_auction_price / 2^((timestamp - $asset_info.creation_ts)/$get_auction_price_halving_period());
+							var['asset_'||$asset] = $asset_info;
+						}`
+					}
+				]
+			},
+
+			// claim assets bought in presale
+			{
+				if: `{ $state AND $asset AND trigger.data.claim }`,
+				init: `{
+					require(!$asset_info.presale, "not launched yet");
+					$contribution = var['contribution_'||trigger.address||'_'||$asset];
+					require($contribution, "you had no contribution or already paid");
+				}`,
+				messages: [
+					{ // send newly minted tokens
+						app: 'payment',
+						payload: {
+							asset: `{$asset}`,
+							outputs: [
+								{address: "{$to}", amount: "{ floor($contribution / $asset_info.initial_price) }"}
+							]
+						}
+					},
+					{
+						app: 'state',
+						state: `{
+							var['contribution_'||trigger.address||'_'||$asset] = false;
+							var['asset_'||$asset] = $asset_info; // modified if we finished the presale or the price moved
+							var['state'] = $state;
+						}`
+					}
+				]
+			},
+
+			// mint or redeem tokens
+			{
+				if: `{ $state AND $asset AND (trigger.output[[asset=$reserve_asset]] > $min_contribution OR trigger.output[[asset=$asset]] > 0) }`,
+				init: `{
+					$tokens = trigger.output[[asset=$asset]];
+					if ($tokens){
+						require(trigger.output[[asset=$reserve_asset]] <= $min_contribution, "don't send the reserve when redeeming tokens");
+					}
+					
+					$reserve_asset_amount = $tokens ? 0 : trigger.output[[asset=$reserve_asset]] - $network_fee; // subtract a fee to compensate for network fees
+					
+					$res = $get_exchange_result_by_state($tokens, $reserve_asset_amount, $asset, $asset_info, $state, trigger.initial_address);
+					
+					response['price'] = $res.new_price;
+					response['swap_fee'] = $res.swap_fee;
+					response['arb_profit_tax'] = $res.arb_profit_tax;
+					response['total_fee'] = $res.total_fee;
+
+					if ($res.payout AND $res.payout < 0)
+						bounce("unexpected payout < 0");
+					if ($res.payout AND trigger.data.min_reserve_tokens AND $res.payout < trigger.data.min_reserve_tokens)
+						bounce("payout would be only " || $res.payout);
+					if (trigger.data.max_fee_percent AND $res.fee_percent > trigger.data.max_fee_percent)
+						bounce("fee would be " || $res.fee_percent || '%');
+					
+					// further hops
+					$hops = trigger.data.hops;
+					$address = $hops[0].address OTHERWISE $to;
+					require($address != var['staking_aa'], "sending to staking AA not allowed"); // not necessary now
+					if ($hops){
+						$data_for_next_hop = $hops[0].data;
+						delete($hops, 0); // remove the head hop
+						if ($data_for_next_hop OR length($hops)){
+							$forwarded_data = $data_for_next_hop OTHERWISE {};
+							if (length($hops))
+								$forwarded_data.hops = $hops;
+						}
+					}
+
+				}`,
+				messages: [
+					{ // send newly minted tokens
+						if: "{$res.delta_s > 0}",
+						app: 'payment',
+						payload: {
+							asset: `{$asset}`,
+							outputs: [
+								{address: "{$address}", amount: "{ $res.delta_s }"}
+							]
+						}
+					},
+					{ // pay out the redeemed reserve
+						app: 'payment',
+						payload: {
+							asset: `{$reserve_asset}`,
+							outputs: [
+								{address: "{$address}", amount: "{$res.payout}", if: "{$res.payout}"},
+							]
+						}
+					},
+					{
+						if: `{$forwarded_data}`,
+						app: 'data',
+						payload: `{$forwarded_data}`
+					},
+					{
+						app: 'state',
+						state: `{
+							if ($asset != $state.asset0)
+								var['asset_'||$asset] = $asset_info;
+							var['state'] = $state;
+							response['fee%'] = round($res.fee_percent, 4) || '%';
+						}`
+					}
+				]
+			},
+
+		]
+	}
+}

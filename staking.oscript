@@ -1,0 +1,583 @@
+/* 
+var['perp_vps_XXXX'] structure:
+assoc: perp_asset_key => voting power
+{"a12345":1234.56789012345,"a12346":1234.56789012345}
+26 characters per perp asset, 1024 max, 1024/26=39 assets. One more key is for "total", hence max 38 assets.
+
+var['group_vps'] structure:
+assoc: group_key => voting power
+{"g29":1234.56789012345,"g30":1234.56789012345}
+23 characters per group, 1024 max, 1024/23=44 groups. One more key is for "total", hence max 43 groups.
+
+track only normalized VP: don't need to update VP all the time when nothing is added/removed
+newly added VP has increasingly larger weight and dilutes the existing VP faster.
+track votes as normalized VP:
+- easy to add new VP
+- rounding issues
+*/
+{
+	doc_url: "https://pyth.ooo/staking.json",
+	getters: `{
+
+		$lib_aa = 'EY4RFQ7QJAVHGOEQDSCODJYSSQER75DY';
+		$common_ts = 1657843200; // Fri Jul 15 2022 00:00:00 GMT+0000
+		$year = 31104000; // 360 * 24 * 3600;
+		$max_perps_per_group = 30;
+		$max_groups = 40;
+
+		$get_max_term = () => params.max_term OTHERWISE 360; // in days
+		$get_min_term = () => params.min_term OTHERWISE 14; // in days
+		$get_decay_factor = () => params.decay_factor OTHERWISE 8; // VP decays 8 times within a year
+
+		$get_param = ($name, $default) => {
+			$value = var[$name];
+			exists($value) ? $value : (exists(params[$name]) ? params[$name] : $default)
+		};
+
+		$get_challenging_period = () => $get_param('challenging_period', 432000); // 5 days
+
+
+		$get_vp = ($user_address) => {
+			$user = var['user_' || $user_address || '_a0'];
+			$user ? $user.normalized_vp / $get_decay_factor()^((timestamp - $common_ts)/$year) : 0
+		};
+
+		$get_rewards = ($user_address, $perp_asset) => {
+			$state = var['state'];
+			$emissions = var['emissions'] OTHERWISE {};
+			
+			$aa_state = var[params.aa]['state'];
+			$asset0 = $aa_state.asset0;
+			$bAsset0 = $asset0 == $perp_asset;
+
+			$perp = var['asset_'||$perp_asset];
+			require($perp, "no such perp "||$perp_asset);
+			$perp_vps = var['perp_vps_'||$perp.group_key] OTHERWISE {};
+			$user_perp_key = 'user_' || $user_address || '_' || $perp.asset_key;
+			$user_perp = var[$user_perp_key] OTHERWISE {balance: 0, last_perp_emissions: {}, rewards: {}};
+			$total_perp_balance = var['perp_asset_balance_' || $perp.asset_key];
+			($lib_aa||'')#1.$distribute_emissions($state, $perp, $user_perp, $perp_vps, $total_perp_balance, $emissions, $bAsset0, $aa_state);
+			$user_perp.rewards // keyed by reward_asset_key
+		};
+
+	}`,
+	init: `{
+
+		$lib = $lib_aa||'';
+
+		$max_term = $get_max_term();
+		$decay_factor = $get_decay_factor();
+		
+		$aa = params.aa;
+		if (!$aa)
+			bounce("no aa");
+		$aa_state = var[$aa]['state'];
+		$asset0 = $aa_state.asset0;
+		
+		$names = ['swap_fee', 'arb_profit_tax', 'stakers_fee_share', 'min_s0_share', 'adjustment_period', 'token_share_threshold', 'presale_period', 'auction_price_halving_period', 'add_price_aa', 'add_preipo', 'change_price_aa', 'change_drift_rate', 'challenging_period'];
+		
+		$is_allowed_name = $name => {
+			length(filter($names, 20, $n => $n == $name)) == 1
+		};
+
+		$state = var['state'] OTHERWISE {
+			total_normalized_vp: 0,
+		};
+
+
+		if (trigger.data.to AND !is_valid_address(trigger.data.to))
+			bounce("bad to address");
+		$to = trigger.data.to OTHERWISE trigger.address;
+		$user_address = trigger.address;
+
+
+		$challenging_period = $get_challenging_period();
+
+		// scaled to the share of the staked balance
+		$get_majority_threshold = () => $state.total_normalized_vp/2 * $aa_state.s0/var['perp_asset_balance_a0'];
+
+	}`,
+	messages: {
+		cases: [
+
+			// add perp tokens to receive a share of emissions
+			// withdraw perp tokens
+			// withdraw rewards
+			{
+				if: `{trigger.data.deposit OR trigger.data.perp_asset AND (trigger.data.withdraw OR trigger.data.withdraw_rewards)}`,
+				init: `{
+					if (trigger.data.deposit) {
+						$bDeposit = true;
+						$received_asset = trigger.output[[asset!='base']].asset;
+						$perp_asset = $received_asset == 'none' AND trigger.data.perp_asset ? trigger.data.perp_asset : $received_asset;
+						require($perp_asset != 'ambiguous' AND $perp_asset != 'none', "invalid perp asset");
+						$deposit_amount = trigger.output[[asset=$perp_asset]];
+						$delta_balance = $deposit_amount;
+					}
+					else if (trigger.data.perp_asset) {
+						$perp_asset = trigger.data.perp_asset;
+						if (trigger.data.withdraw)
+							$bWithdraw = true;
+						$reward_asset = trigger.data.reward_asset;
+						if ($reward_asset OR trigger.data.withdraw_staker_fees) {
+							$bWithdrawReward = true;
+							$bWithdrawStakerFees = trigger.data.withdraw_staker_fees AND $asset0 == $perp_asset;
+							$reward_asset_key = $bWithdrawStakerFees ? 'r' : var['reward_assets_'||$reward_asset];
+							require($reward_asset_key, "reward asset not known");
+						}
+					}
+					$bAsset0 = $asset0 == $perp_asset;
+
+					require($bAsset0 OR var[$aa]['asset_'||$perp_asset], "unknown asset");
+					$perp = var['asset_'||$perp_asset];
+					require($perp, "perp asset not initialized");
+
+					$emissions = var['emissions'] OTHERWISE {};
+					$user_perp_key = 'user_' || $user_address || '_' || $perp.asset_key;
+					$user_perp = var[$user_perp_key] OTHERWISE {balance: 0, last_perp_emissions: {}, rewards: {}};
+
+					if ($bAsset0){
+						if ($bDeposit){
+							$term = trigger.data.term; // in days
+							require($term, "no term");
+							require(is_assoc(trigger.data.percentages), "no percentages");
+							require(is_integer($term) AND $term >= $get_min_term() AND $term <= $max_term, "invalid term");
+
+							$new_expiry_ts = timestamp + $term * 24 * 3600;
+							require($new_expiry_ts >= ($user_perp.expiry_ts OTHERWISE 0), "the new term should expire after " || timestamp_to_string($user_perp.expiry_ts));
+
+							$voted_group_key = trigger.data.voted_group_key;
+							require($voted_group_key, "no voted group key");
+							$votes = var['votes_'||$user_address] OTHERWISE {};
+							$group_vps = var['group_vps'] OTHERWISE {};
+							$voted_perp_vps = var['perp_vps_'||$voted_group_key] OTHERWISE {};
+						}
+						else if ($bWithdraw){
+							require(timestamp >= $user_perp.expiry_ts, "you can unstake only after " || timestamp_to_string($user_perp.expiry_ts));
+							$voted_group_key = trigger.data.voted_group_key;
+							require($voted_group_key, "no voted group key");
+							$votes = var['votes_'||$user_address];
+							require($votes, "you have no votes");
+							$group_vps = var['group_vps'] OTHERWISE {};
+							$voted_perp_vps = var['perp_vps_'||$voted_group_key];
+							require($voted_perp_vps, "no perp vps on the voted group");
+						}
+					}
+
+					if (trigger.data.perp_asset){
+						require($user_perp.balance > 0, "you have no balance in this perp asset");
+						if ($bWithdraw){
+							$withdrawal_amount = trigger.data.amount OTHERWISE $user_perp.balance;
+							require(is_integer($withdrawal_amount) AND $withdrawal_amount > 0 AND $withdrawal_amount <= $user_perp.balance, "invalid withdrawal amount");
+							$delta_balance = -$withdrawal_amount;
+						}
+					}
+					$perp_vps = var['perp_vps_'||$perp.group_key] OTHERWISE {};
+					$total_perp_balance = var['perp_asset_balance_' || $perp.asset_key];
+					$lib#1.$distribute_emissions($state, $perp, $user_perp, $perp_vps, $total_perp_balance, $emissions, $bAsset0, $aa_state);
+				}`,
+				messages: [
+					{
+						if: `{$bWithdraw}`,
+						app: 'payment',
+						payload: {
+							asset: `{$perp_asset}`,
+							outputs: [{address: "{$to}", amount: "{$withdrawal_amount}"}]
+						}
+					},
+					{ // send the accumulated reward
+						if: `{$bWithdrawReward AND !$bWithdrawStakerFees}`,
+						app: 'payment',
+						payload: {
+							asset: `{$reward_asset}`,
+							outputs: [
+								{address: "{$to}", amount: "{ floor($user_perp.rewards[$reward_asset_key]) }"}  // fractional part is lost
+							]
+						}
+					},
+					{ // send the accumulated staker fees
+						if: `{$bWithdrawStakerFees}`,
+						app: 'payment',
+						payload: {
+							outputs: [
+								{address: "{$aa}", amount: 2000}
+							]
+						}
+					},
+					{ // send the accumulated staker fees
+						if: `{$bWithdrawStakerFees}`,
+						app: 'data',
+						payload: {
+							withdraw_staker_fees: 1,
+							address: `{$to}`,
+							amount: `{floor($user_perp.rewards[$reward_asset_key])}`,
+						}
+					},
+					{
+						app: 'state',
+						state: `{
+							if ($bDeposit OR $bWithdraw){
+								$user_perp.balance = $user_perp.balance + $delta_balance;
+								var['perp_asset_balance_' || $perp.asset_key] += $delta_balance;
+								if ($bDeposit)
+									response['deposited'] = $deposit_amount;
+							}
+							if ($bWithdrawReward)
+								delete($user_perp.rewards, $reward_asset_key); // remove the key to save capacity in case this reward asset gets blacklisted
+							
+							if ($bAsset0){
+								if ($bDeposit){
+									$final_voting_power = $user_perp.balance / $decay_factor^($max_term/360);
+									$normalized_voting_power = $final_voting_power * $decay_factor^($term/360 + (timestamp - $common_ts)/$year); // vp decays $decay_factor times every year
+
+									$user_perp.expiry_ts = $new_expiry_ts;
+
+									$delta_normalized_vp = $normalized_voting_power - $user_perp.normalized_vp;
+									$user_perp.normalized_vp = $normalized_voting_power;
+									$state.total_normalized_vp = $state.total_normalized_vp + $delta_normalized_vp;
+
+									$lib#1.$distribute_new_vp($votes, $voted_perp_vps, $delta_normalized_vp, trigger.data.percentages);
+									$group_vps[$voted_group_key] = $group_vps[$voted_group_key] + $delta_normalized_vp;
+									$group_vps.total = $group_vps.total + $delta_normalized_vp;
+
+									var['votes_'||$user_address] = $votes;
+									var['perp_vps_'||$voted_group_key] = $voted_perp_vps;
+									var['group_vps'] = $group_vps;
+								}
+								else if ($bWithdraw){
+									require($user_perp.balance == 0, "please withdraw all");
+									$removed_normalized_vp = $user_perp.normalized_vp;
+									$lib#1.$remove_votes($votes, $voted_perp_vps);
+									$voted_perp_vps.total = $voted_perp_vps.total - $removed_normalized_vp;
+									$group_vps[$voted_group_key] = $group_vps[$voted_group_key] - $removed_normalized_vp;
+									$group_vps.total = $group_vps.total - $removed_normalized_vp;
+
+									var['votes_'||$user_address] = false;
+									var['perp_vps_'||$voted_group_key] = $voted_perp_vps;
+									var['group_vps'] = $group_vps;
+
+									$state.total_normalized_vp = $state.total_normalized_vp - $removed_normalized_vp;
+								}
+							}
+
+							var[$user_perp_key] = $bWithdraw AND $user_perp.balance == 0 ? false : $user_perp;
+							var['asset_'||$perp_asset] = $perp;
+							var['state'] = $state;
+						}`
+					}
+				]
+			},
+
+			// vote for distribution shares
+			{
+				if: `{trigger.data.vote_shares AND trigger.data.changes AND trigger.data.group_key1}`,
+				init: `{
+					$changes = trigger.data.changes;
+					$group_key1 = trigger.data.group_key1;
+					$group_key2 = trigger.data.group_key2;
+					require(is_assoc($changes), "invalid changes object");
+					$votes = var['votes_'||$user_address] OTHERWISE {};
+					$group_vps = var['group_vps'] OTHERWISE {};
+					$perp_vps = {};
+					$perp_vps[$group_key1] = var['perp_vps_'||$group_key1] OTHERWISE {};
+					if ($group_key2)
+						$perp_vps[$group_key2] = var['perp_vps_'||$group_key2] OTHERWISE {};
+					$lib#1.$apply_vote($votes, $perp_vps, $group_key1, $group_key2, $group_vps, $changes);
+				}`,
+				messages: [
+					{
+						app: 'state',
+						state: `{
+							var['votes_'||$user_address] = $votes;
+							var['group_vps'] = $group_vps;
+							var['perp_vps_'||$group_key1] = $perp_vps[$group_key1];
+							if ($group_key2)
+								var['perp_vps_'||$group_key2] = $perp_vps[$group_key2];
+						}`
+					}
+				]
+			},
+
+
+			// vote for whitelist/blacklist of reward assets
+			{
+				if: `{(trigger.data.vote_whitelist OR trigger.data.vote_blacklist) AND trigger.data.reward_asset}`,
+				init: `{
+					$sign = trigger.data.vote_whitelist ? 1 : -1;
+					$reward_asset = trigger.data.reward_asset;
+					require(asset[$reward_asset].exists, "no such asset");
+					$wl_votes = var['wl_votes_'||$reward_asset] OTHERWISE {vp: 0, flip_ts: 0};
+
+					$old_vp = var['user_wl_votes_'||$user_address||'_'||$reward_asset];
+					$user = var['user_' || $user_address || '_a0'] OTHERWISE {balance: 0, last_perp_emissions: {}, rewards: {}};
+					$new_vp = $user.normalized_vp * $sign;
+					$added_vp = $new_vp - $old_vp;
+				}`,
+				messages: [
+					{
+						app: 'state',
+						state: `{
+							var['user_wl_votes_'||$user_address||'_'||$reward_asset] += $added_vp;
+
+							$new_total_vp = $wl_votes.vp + $added_vp;
+							if ($new_total_vp AND $wl_votes.vp * $new_total_vp <= 0) // flipped the sign
+								$wl_votes.flip_ts = timestamp;
+							$wl_votes.vp = $new_total_vp;
+							var['wl_votes_'||$reward_asset] = $wl_votes;
+
+							// commit if have the majority or stayed unchallenged long enough
+							if (abs($new_total_vp) > $get_majority_threshold() OR timestamp > $wl_votes.flip_ts + $challenging_period){
+								$asset_key = var['reward_assets_'||$reward_asset];
+								$emissions = var['emissions'] OTHERWISE {};
+								if ($new_total_vp > 0){ // add to the whitelist (or re-add)
+									if (!$asset_key){ // create a new reward asset
+										// we'll have 2 keys per reward asset in $perp and $user_perp
+										require(length($emissions) < 15, "too many reward assets, remove something first");
+										var['last_reward_asset_num'] += 1;
+										$new_asset_key = 'e' || var['last_reward_asset_num'];
+										var['reward_assets_'||$reward_asset] = $new_asset_key;
+										$emissions[$new_asset_key] = 0;
+										response['message'] = 'whitelisted';
+									}
+									else{ // revive a previously blacklisted reward asset
+										$emissions[$asset_key] = 0;
+										response['message'] = 're-whitelisted';
+									}
+								}
+								else{ // blacklist
+									delete($emissions, $asset_key);
+									response['message'] = 'blacklisted';
+								}
+								var['emissions'] = $emissions;
+							}
+						}`
+					}
+				]
+			},
+
+			// delete the blacklisted asset info to preserve the capacity
+			{
+				if: `{trigger.data.remove AND trigger.data.perp_asset AND trigger.data.reward_asset}`,
+				init: `{
+					$perp_asset = trigger.data.perp_asset;
+					$reward_asset = trigger.data.reward_asset;
+					$emissions = var['emissions'];
+					$reward_asset_key = var['reward_assets_'||$reward_asset];
+					require($reward_asset_key, "this asset was never whitelisted");
+					require(!exists($emissions[$reward_asset_key]), "this asset is whitelisted");
+					
+					$perp = var['asset_'||$perp_asset];
+					require($perp, "no such perp asset");
+
+					$user_perp_key = 'user_' || $to || '_' || $perp.asset_key;
+					$user_perp = var[$user_perp_key];
+				}`,
+				messages: [
+					{
+						app: 'state',
+						state: `{
+							delete($perp.last_emissions, $reward_asset_key);
+							delete($perp.received_emissions, $reward_asset_key);
+							var['asset_'||$perp_asset] = $perp;
+							if ($user_perp){
+								delete($user_perp.last_perp_emissions, $reward_asset_key);
+								var[$user_perp_key] = $user_perp;
+							}
+						}`
+					}
+				]
+			},
+
+			// vote for updating the AA props
+			{
+				if: `{trigger.data.vote_value AND trigger.data.name}`,
+				init: `{
+					$name = trigger.data.name;
+					$value = trigger.data.value;
+					require($is_allowed_name($name), "unknown name: " || $name);
+					if ($name == 'add_price_aa'){
+						$price_aa = trigger.data.price_aa;
+					//	require(is_valid_address($price_aa), "not a valid address");
+						require(typeof($price_aa#3.$get_target_price()) == 'number', "bad price");
+						$full_name = $name||$price_aa;
+					}
+					// change_price_aa can be always voted for but can be committed only for preipo assets to avoid malicious governance setting all prices to 0. Checking for the existence of price_aa here would be too expensive.
+					else if ($name == 'change_price_aa' OR $name == 'change_drift_rate'){
+						$a = trigger.data.asset;
+						require(var[$aa]['asset_'||$a], "not a valid asset");
+						$full_name = $name||$a;
+					}
+					else if ($name == 'add_preipo'){
+						$symbol = trigger.data.symbol;
+						$initial_auction_price = trigger.data.initial_auction_price;
+						$max_tokens = trigger.data.max_tokens;
+						require($symbol, "no symbol");
+						require($initial_auction_price > 0, "bad initial price");
+						require(length($symbol) <= 10, "symbol too long");
+						require(is_integer($max_tokens) AND $max_tokens > 0, "bad max_tokens");
+						$full_name = $name||$symbol||'_'||$initial_auction_price||'_'||$max_tokens;
+					}
+					else
+						$full_name = $name;
+					if (exists($value)){
+						if ($name == 'swap_fee' OR $name == 'min_s0_share')
+							require(typeof($value) == 'number' AND $value >= 0 AND $value < 1, "invalid value");
+						if ($name == 'stakers_fee_share')
+							require(typeof($value) == 'number' AND $value >= 0 AND $value <= 1, "invalid value");
+						else if ($name == 'arb_profit_tax' OR $name == 'token_share_threshold')
+							require(typeof($value) == 'number' AND $value >= 0, "invalid value");
+						else if ($name == 'adjustment_period' OR $name == 'presale_period' OR $name == 'auction_price_halving_period' OR $name == 'challenging_period')
+							require(is_integer($value) AND $value > 0, "invalid value");
+						else if ($name == 'add_price_aa' OR $name == 'add_preipo')
+							require($value == 'yes' OR $value == 'no', "invalid value");
+						else if ($name == 'change_price_aa'){
+							$price = $value#3.$get_target_price();
+							require(typeof($price) == 'number' OR !exists($price), "bad price"); // false price is also acceptable
+						}
+						else if ($name == 'change_drift_rate'){
+							require(typeof($value) == 'number', "bad drift rate"); // negative is also allowed
+							require(abs($value) <= (params.max_drift_rate OTHERWISE 0.5), "drift rate too large");
+						}
+						else
+							bounce("unknown variable");
+					}
+					$prev_vote = var['user_value_votes_'||$user_address||'_'||$full_name];
+					$user = var['user_' || $user_address || '_a0'] OTHERWISE {balance: 0, last_perp_emissions: {}, rewards: {}};
+					$vp = $user.normalized_vp;
+					$leader = var['leader_'||$full_name] OTHERWISE {};
+
+					if (exists($value)) {
+						$subtracted_from_leader_vp = ($prev_vote AND exists($leader.value) AND $prev_vote.value == $leader.value AND $value != $prev_vote.value) ? $prev_vote.vp : 0; // removing my vote from the current leader
+						$leader_vp = exists($leader.value) ? var['value_votes_'||$full_name||'_'||$leader.value] - $subtracted_from_leader_vp : 0;
+						$added_vp = $vp - ($prev_vote AND $prev_vote.value == $value ? $prev_vote.vp : 0);
+						$new_vp = var['value_votes_'||$full_name||'_'||$value] + $added_vp;
+						if ((!exists($leader.value) OR $leader.value != $value) AND $new_vp > $leader_vp){
+							$leader.value = $value;
+							$leader.flip_ts = timestamp;
+							$new_leader_vp = $new_vp;
+							$bLeaderChanged = true;
+							response['new_leader'] = $value;
+						}
+						else
+							$new_leader_vp = $leader_vp + (exists($leader.value) AND $leader.value == $value ? $added_vp : 0);
+						$is_new_value = () => {
+							$current_value = var[$full_name];
+							!exists($current_value) OR $current_value != $leader.value
+						};
+						$bCommit = ($is_new_value() AND ($new_leader_vp > $get_majority_threshold() OR timestamp > $leader.flip_ts + $challenging_period AND $name != 'challenging_period'));
+						$bDontPostToPerp = ($name == 'add_price_aa' OR $name == 'add_preipo') AND $leader.value == 'no';
+						$bPost = $bCommit AND $name != 'challenging_period' AND !$bDontPostToPerp;
+					}
+				}`,
+				messages: [
+					// ping the aa to record the new value
+					{
+						if: `{$bPost}`,
+						app: 'payment',
+						payload: {
+							asset: 'base',
+							outputs: [
+								{address: "{$aa}", amount: 5000}
+							]
+						}
+					},
+					{
+						if: `{$bPost}`,
+						app: 'data',
+						payload: {
+							name: `{$name}`,
+							value: `{$leader.value}`,
+							price_aa: `{$name == 'add_price_aa' ? $price_aa : ''}`,
+							asset: `{$name == 'change_price_aa' OR $name == 'change_drift_rate' ? $a : ''}`,
+							symbol: `{$name == 'add_preipo' ? $symbol : ''}`,
+							initial_auction_price: `{$name == 'add_preipo' ? $initial_auction_price : ''}`,
+							max_tokens: `{$name == 'add_preipo' ? $max_tokens : ''}`,
+						}
+					},
+					{
+						app: 'state',
+						state: `{
+							if ($prev_vote)
+								var['value_votes_'||$full_name||'_'||$prev_vote.value] -= $prev_vote.vp;
+							if (exists($value)){
+								var['value_votes_'||$full_name||'_'||$value] += $vp;
+								if ($bLeaderChanged)
+									var['leader_'||$full_name] = $leader;
+
+								// commit token params
+								if ($bCommit){
+									var[$full_name] = $leader.value;
+									response['committed'] = $leader.value;
+								}
+							}
+							var['user_value_votes_'||$user_address||'_'||$full_name] = exists($value) ? {value:$value, vp:$vp} : false;
+						}`
+					}
+				]
+			},
+
+			// init new perp asset
+			{
+				if: `{ trigger.address == $aa AND (var[$aa]['asset_'||trigger.unit] OR trigger.unit == $asset0) }`,
+				messages: [
+					{
+						app: 'state',
+						state: `{
+							$perp_asset = trigger.unit;
+							$perp = var['asset_'||$perp_asset] OTHERWISE {};
+							require(!$perp.asset_key, "already initialized");
+							
+							$last_asset_num = var['last_asset_num'];
+							$asset_num = exists($last_asset_num) ? $last_asset_num + 1 : 0;
+							var['last_asset_num'] = $asset_num;
+							$perp.asset_key = 'a' || $asset_num;
+
+							$last_group_num = var['last_group_num'];
+							$last_perp_vps = var['perp_vps_g'||$last_group_num] OTHERWISE {};
+							// +1 adds the 'total' key
+							if (!$last_group_num OR length($last_perp_vps) >= $max_perps_per_group + 1){
+								var['last_group_num'] += 1;
+								$group_num = $last_group_num + 1;
+								require($group_num <= $max_groups, "too many groups");
+								$perp_vps = {total:0};
+							}
+							else {
+								$group_num = $last_group_num;
+								$perp_vps = $last_perp_vps;
+							}
+							$perp.group_key = 'g'||$group_num;
+							var['asset_'||$perp_asset] = $perp;
+
+							$perp_vps[$perp.asset_key] = 0;
+							var['perp_vps_'||$perp.group_key] = $perp_vps;
+
+							response['message'] = 'initialized new perp asset';
+						}`
+					}
+				]
+			},
+
+			// accept emissions
+			{
+				if: `{
+					$reward_asset = trigger.output[[asset!=base]].asset;
+					$emissions = var['emissions'];
+					$reward_asset_key = var['reward_assets_'||$reward_asset];
+					$reward_asset != 'ambiguous' AND $reward_asset != 'none' AND $reward_asset_key AND exists($emissions[$reward_asset_key])
+				}`,
+				messages: [
+					{
+						app: 'state',
+						state: `{
+							$emissions[$reward_asset_key] = $emissions[$reward_asset_key] + trigger.output[[asset!=base]];
+							var['emissions'] = $emissions;
+							response['message'] = 'accepted emissions';
+						}`
+					}
+				]
+			},
+
+
+		]
+	}
+}

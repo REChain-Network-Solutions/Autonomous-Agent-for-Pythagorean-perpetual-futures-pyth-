@@ -1,0 +1,106 @@
+{
+	doc_url: "https://pyth.ooo/perpetual-factory.json",
+	init: `{
+		$base_aa = 'A336I77COVXUCN3L2YOYVIZF7PKMFCAV';
+	}`,
+	messages: {
+		cases: [
+
+			// create a new perpetual futures AA
+			{
+				init: `{
+					$reserve_asset = trigger.data.reserve_asset OTHERWISE 'base';
+					if ($reserve_asset != 'base')
+						require(asset[$reserve_asset].exists, "reserve_asset does not exist");
+					require(is_aa(trigger.data.reserve_price_aa), "invalid reserve_price_aa");
+					
+					$params = {
+						reserve_asset: $reserve_asset,
+						reserve_price_aa: trigger.data.reserve_price_aa,
+					};
+
+					$names = [
+						'swap_fee',
+						'arb_profit_tax',
+						'stakers_fee_share',
+						'adjustment_period',
+						'presale_period',
+						'auction_price_halving_period',
+						'token_share_threshold',
+						'min_s0_share',
+						'max_drift_rate',
+					];
+					foreach($names, 9, $name => {
+						$value = trigger.data[$name];
+						if (exists($value)) {
+							require(typeof($value) == 'number' AND $value >= 0, $name||" must be a nonnegative number");
+							if ($name == 'swap_fee' OR $name == 'min_s0_share') // however >100% tax allowed for arb_profit_tax, and token_share_threshold is a share of the _current_ reserve and it can exceed 100%
+								require($value < 1, $name||" must be < 1");
+							if ($name == 'stakers_fee_share')
+								require($value <= 1, $name||" must be <= 1");
+							if ($name == 'adjustment_period' OR $name == 'presale_period' OR $name == 'auction_price_halving_period')
+								require(is_integer($value), $name||" must be integer");
+							$params[$name] = $value;
+						}
+					});
+
+
+					// staking AA params
+					foreach(['challenging_period', 'max_term', 'min_term', 'decay_factor'], 4, $p => {
+						$value = trigger.data[$p];
+						if (exists($value)) {
+							require(typeof($value) == 'number' AND $value > 0, $p||" must be a positive number");
+							if ($p == 'challenging_period' OR $p == 'max_term' OR $p == 'min_term')
+								require(is_integer($value), $p||" must be integer");
+							if ($p == 'decay_factor')
+								require($value > 1, "decay factor must be >1");
+							$params[$p] = $value;
+						}
+					});
+
+					$aa = [
+						'autonomous agent',
+						{
+							base_aa: $base_aa,
+							params: $params
+						}
+					];
+					$aa_address = chash160($aa);
+					require(!definition[$aa_address], "such an AA already exists: "||$aa_address);
+				}`,
+				messages: [
+					{
+						app: 'payment',
+						payload: {
+							asset: 'base',
+							outputs: [
+								{ address: "{ $aa_address }", amount: 5000 },
+							]
+						}
+					},
+					{
+						app: 'data',
+						payload: {
+							define: 1,
+							factory: `{this_address}`
+						}
+					},
+					{
+						app: 'definition',
+						payload: {
+							definition: `{$aa}`
+						}
+					},
+					{
+						app: 'state',
+						state: `{
+							var['perp_' || $aa_address] = $params;
+							response['address'] = $aa_address;
+						}`
+					}
+				]
+
+			}
+		]
+	}
+}
