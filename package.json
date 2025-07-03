@@ -13,7 +13,7 @@
   "dependencies": {
     "chai": "^4.2.0",
     "chai-deep-closeto": "^0.1.1",
-    "mocha": "^6.2.0",
+    "mocha": "^11.7.1",
     "aa-testkit": "git+https://github.com/valyakin/aa-testkit.git",
     "REChainEXChange-v2-aa": "git+https://github.com/REChainball/REChainEXChange-v2-aa.git"
   },
