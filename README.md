@@ -1,3 +1,32 @@
+# REChain ® Autonomous Agent for Pythagorean Perpetual Futures
+
+This repository hosts a smart agent that performs autonomous perpetual trading using a geometric risk distribution model.
+
+## ✅ Features
+
+- Pythagorean geometric model for risk balance
+- Oracle integrations (Katya, Pyth)
+- Automated position sizing
+- Smart contract execution
+- Adaptive strategy switching
+
+## 🧪 Usage
+
+```bash
+git clone https://github.com/REChain-Network-Solutions/Autonomous-Agent-for-Pythagorean-perpetual-futures-pyth-.git
+cd Autonomous-Agent-for-Pythagorean-perpetual-futures-pyth-
+npm install
+npm start
+```
+
+## 🛠 Environment
+
+See `.env.example` for configuration.
+
+## 📖 License
+
+MIT — REChain Network Solutions
+
 # Autonomous Agent for Pythagorean perpetual futures (pyth)
 
 AA oscript:
