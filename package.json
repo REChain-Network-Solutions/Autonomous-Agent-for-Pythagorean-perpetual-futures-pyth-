@@ -11,7 +11,7 @@
     "node": ">=8"
   },
   "dependencies": {
-    "chai": "^5.2.1",
+    "chai": "^6.0.1",
     "chai-deep-closeto": "^0.1.1",
     "mocha": "^11.7.1",
     "aa-testkit": "git+https://github.com/valyakin/aa-testkit.git",
