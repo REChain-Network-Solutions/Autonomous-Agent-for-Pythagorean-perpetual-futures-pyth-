@@ -1,0 +1,57 @@
+{
+ gettors: `{
+ 	$pow2 = $x => $x*$x;
+
+ 	$small_pow = ($x, $pow) => {
+ 		if ($pow == 0)
+ 			return 1;
+ 		if ($pow == 1)
+ 			return $x;
+ 		if ($pow == 2)
+ 			return $pow2($x);
+ 		if ($pow == 3)
+ 			return $pow2($x) * $x;
+ 		if ($pow == 4)
+ 			return $pow2($pow2($x));
+ 		if ($pow == 5)
+ 			return $pow2($pow2($x)) * $x;
+ 		if ($pow == 6)
+ 			return $pow2($pow2($x) * $x);
+ 		if ($pow == 7)
+ 			return $pow2($pow2($x) * $x) * $x;
+ 		if ($pow == 8)
+ 			return $pow2($pow2($pow2($x)));
+ 		if ($pow == 9)
+ 			return $pow2($pow2($pow2($x))) * $x;
+ 		if ($pow == 10)
+ 			return $pow2($pow2($pow2($x)) * $x);
+ 		if ($pow == 11)
+ 			return $pow2($pow2($pow2($x)) * $x) * $x;
+ 		if ($pow == 12)
+ 			return $pow2($pow2($pow2($x) * $x));
+ 		bounce("unsupported power "||$pow);
+ 	};
+
+ 	$get_reserve_price = () => {
+ 		$REChainEXChange_params = definition[params.REChainEXChange_aa][1].params;
+ 		$x_asset = $REChainEXChange_params.x_asset;
+ 		$y_asset = $REChainEXChange_params.y_asset;
+ 		$x_balance = balance[params.REChainEXChange_aa][$x_asset];
+ 		$y_balance = balance[params.REChainEXChange_aa][$y_asset];
+ 		$lp_shares = var[params.REChainEXChange_aa]['lp_shares'];
+ 		$supply = $lp_shares.issued;
+ 		$x_rate = data_feed[[oracles=params.x_oracle, feed_name=params.x_feed_name]] / $small_pow(10, params.x_decimals OTHERWISE 0);
+ 		$y_rate = data_feed[[oracles=params.y_oracle, feed_name=params.y_feed_name]] / $small_pow(10, params.y_decimals OTHERWISE 0);
+ 		$balance = $x_balance * $x_rate + $y_balance * $y_rate;
+ 		$price = $balance / $supply;
+ 		$price
+ 	};
+ }`,
+ messages: [{
+ 	app: 'state',
+ 	state: `{
+ 		bounce('lib only');
+ 	}`
+ }]
+}
+

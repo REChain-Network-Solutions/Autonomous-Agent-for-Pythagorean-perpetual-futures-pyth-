@@ -1,0 +1,69 @@
+openapi: 3.0.3
+info:
+  title: Pythagorean Perpetual Agent API
+  version: 0.1.0
+servers:
+  - url: /
+paths:
+  /healthz:
+    get:
+      summary: Liveness
+      responses:
+        '200': { description: OK }
+  /readyz:
+    get:
+      summary: Readiness
+      responses:
+        '200': { description: OK }
+  /metrics/status:
+    get:
+      summary: Status metrics
+      responses:
+        '200':
+          description: OK
+  /metrics/positions:
+    get:
+      summary: Positions
+      responses:
+        '200': { description: OK }
+  /metrics/performance:
+    get:
+      summary: Performance
+      responses:
+        '200': { description: OK }
+  /admin/trigger-rebalance:
+    post:
+      summary: Trigger rebalance
+      security:
+        - Admin: []
+      responses:
+        '200': { description: OK }
+  /admin/update-metrics:
+    post:
+      summary: Update metrics (file/stub providers)
+      security:
+        - Admin: []
+      responses:
+        '200': { description: OK }
+  /web3/nonce:
+    get:
+      summary: Get wallet nonce
+      responses:
+        '200': { description: OK }
+  /web3/verify:
+    post:
+      summary: Verify wallet signature
+      responses:
+        '200': { description: OK }
+  /did/verify:
+    post:
+      summary: Verify DID (stub)
+      responses:
+        '200': { description: OK }
+components:
+  securitySchemes:
+    Admin:
+      type: apiKey
+      in: header
+      name: x-admin-token
+

@@ -3,9 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "test": "mocha --opts test/mocha.opts --require test/bootload.js",
-    "test:all": "mocha --opts test/mocha.opts --require test/bootload.js test/*.test.oscript.js",
-    "lint": "node ./node_modules/.bin/eslint --ext .js --max-warnings=0 test"
+    "test": "mocha",
+    "test:all": "mocha test/*.test.oscript.js",
+    "lint": "node ./node_modules/.bin/eslint --ext .js --max-warnings=0 test",
+    "start": "node src/server.js"
   },
   "engines": {
     "node": ">=8"
@@ -15,7 +16,11 @@
     "chai-deep-closeto": "^0.1.1",
     "mocha": "^11.7.1",
     "aa-testkit": "git+https://github.com/valyakin/aa-testkit.git",
-    "REChainEXChange-v2-aa": "git+https://github.com/REChainball/REChainEXChange-v2-aa.git"
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "ethers": "^6.13.3",
+    "swagger-ui-express": "^5.0.1",
+    "yaml": "^2.5.1"
   },
   "devDependencies": {
     "eslint": "^9.31.0",

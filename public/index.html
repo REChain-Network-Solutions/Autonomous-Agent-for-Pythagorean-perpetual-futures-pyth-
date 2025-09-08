@@ -1,0 +1,68 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pyth AA Dashboard</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    .row { display: flex; gap: 20px; }
+    .card { padding: 12px; border: 1px solid #ddd; border-radius: 8px; }
+    pre { background: #f7f7f7; padding: 8px; border-radius: 6px; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.3/dist/ethers.min.js"></script>
+  <script>
+    let sessionId = ''
+    async function connectWallet(){
+      if (!window.ethereum){ alert('No wallet'); return }
+      const [addr] = await window.ethereum.request({ method:'eth_requestAccounts' })
+      const nonceRes = await fetch('/web3/nonce')
+      const { id, nonce } = await nonceRes.json()
+      const provider = new ethers.BrowserProvider(window.ethereum)
+      const signer = await provider.getSigner()
+      const message = 'Login with nonce: ' + nonce
+      const signature = await signer.signMessage(message)
+      const verifyRes = await fetch('/web3/verify', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, address: addr, signature, message }) })
+      const data = await verifyRes.json()
+      if (!data.ok) return alert('Auth failed')
+      sessionId = data.sessionId
+      document.getElementById('session').textContent = sessionId
+    }
+    function startStream(){
+      const ev = new EventSource('/metrics/stream')
+      ev.addEventListener('metrics', (e)=>{
+        const data = JSON.parse(e.data)
+        document.getElementById('status').textContent = JSON.stringify(data.status)
+        document.getElementById('positions').textContent = JSON.stringify(data.positions)
+        document.getElementById('perf').textContent = JSON.stringify(data.performance)
+      })
+    }
+    async function rebalance(){
+      const r = await fetch('/admin/trigger-rebalance', { method:'POST', headers:{ 'x-session-id': sessionId } })
+      if (!r.ok) alert('not allowed')
+    }
+    window.addEventListener('DOMContentLoaded', startStream)
+  </script>
+</head>
+<body>
+  <h1>Pyth AA Dashboard</h1>
+  <div class="row">
+    <div class="card">
+      <button onclick="connectWallet()">Connect Wallet</button>
+      <div>Session: <code id="session"></code></div>
+      <button onclick="rebalance()">Trigger Rebalance</button>
+    </div>
+    <div class="card">
+      <a href="/docs" target="_blank">API Docs</a>
+    </div>
+  </div>
+  <h3>Status</h3>
+  <pre id="status"></pre>
+  <h3>Positions</h3>
+  <pre id="positions"></pre>
+  <h3>Performance</h3>
+  <pre id="perf"></pre>
+</body>
+</html>
+
+

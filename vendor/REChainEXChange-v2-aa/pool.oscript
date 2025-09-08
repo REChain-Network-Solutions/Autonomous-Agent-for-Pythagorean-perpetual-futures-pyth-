@@ -1,0 +1,61 @@
+{
+ init: `{
+ 	$x_asset = params.x_asset OTHERWISE 'base';
+ 	$y_asset = params.y_asset;
+ 	if ($x_asset != 'base')
+ 		require(asset[$x_asset].exists, "x_asset does not exist");
+ 	require(asset[$y_asset].exists, "y_asset does not exist");
+ }`,
+ messages: {
+ 	cases: [
+ 		{
+ 			if: `{
+ 				$xa = trigger.output[[asset=$x_asset]];
+ 				$ya = trigger.output[[asset=$y_asset]];
+ 				$xa > 0 AND $ya > 0
+ 			}`,
+ 			init: `{
+ 				$to = trigger.data.to OTHERWISE trigger.address;
+ 				$mint = floor(sqrt($xa * $ya));
+ 				$lp = var['lp_shares'] OTHERWISE { asset: '', issued: 0 };
+ 				$bFirst = !$lp.asset;
+ 				if ($bFirst)
+ 					$lp.asset = response_unit; // set after asset definition
+ 			}`,
+ 			messages: [
+ 				{ // define LP asset on first add
+ 					if: `{$bFirst}`,
+ 					app: 'asset',
+ 					payload: {
+ 						is_private: false,
+ 						is_transferrable: true,
+ 						auto_destroy: false,
+ 						fixed_denominations: false,
+ 						issued_by_definer_only: true,
+ 						cosigned_by_definer: false,
+ 						spender_attested: false,
+ 					}
+ 				},
+ 				{ // mint LP shares
+ 					app: 'payment',
+ 					payload: {
+ 						asset: `{ $bFirst ? response_unit : var['lp_shares'].asset }`,
+ 						outputs: [ { address: "{$to}", amount: "{$mint}" } ]
+ 					}
+ 				},
+ 				{
+ 					app: 'state',
+ 					state: `{
+ 						$lp = var['lp_shares'] OTHERWISE {};
+ 						$lp.asset = $lp.asset OTHERWISE response_unit;
+ 						$lp.issued = ($lp.issued OTHERWISE 0) + $mint;
+ 						var['lp_shares'] = $lp;
+ 						response['event'] = '{"type":"add"}';
+ 					}`
+ 				}
+ 			]
+ 		}
+ 	]
+ }
+}
+

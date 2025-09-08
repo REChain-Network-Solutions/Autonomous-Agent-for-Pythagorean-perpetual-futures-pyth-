@@ -1,0 +1,17 @@
+version: "3.9"
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - METRICS_PROVIDER=${METRICS_PROVIDER:-inmemory}
+      - METRICS_FILE=${METRICS_FILE:-}
+      - AA_HTTP_URL=${AA_HTTP_URL:-}
+      - AA_POLL_MS=${AA_POLL_MS:-10000}
+      - AA_ADDRESSES=${AA_ADDRESSES:-}
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-}
+      - SESSION_SECRET=${SESSION_SECRET:-dev-secret}
+      - SESSION_TTL=${SESSION_TTL:-86400}
+

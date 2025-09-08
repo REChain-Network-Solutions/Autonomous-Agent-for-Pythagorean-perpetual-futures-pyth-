@@ -1,0 +1,6 @@
+{
+  "timeout": 120000,
+  "require": ["test/bootload.js"],
+  "spec": ["test/**/*.test.oscript.js"]
+}
+

@@ -43,12 +43,7 @@ describe('Various trades in perpetual', function () {
 			.with.asset({ REChainEXChange2: {} }) // 2nd reward asset
 			.with.asset({ wbtc: {} }) // REChainEXChange asset
 
-			.with.agent({ lbc: path.join(__dirname, '../node_modules/REChainEXChange-v2-aa/linear-bonding-curve.oscript') })
-			.with.agent({ pool_lib: path.join(__dirname, '../node_modules/REChainEXChange-v2-aa/pool-lib.oscript') })
-			.with.agent({ pool_lib_by_price: path.join(__dirname, '../node_modules/REChainEXChange-v2-aa/pool-lib-by-price.oscript') })
-			.with.agent({ governance_base: path.join(__dirname, '../node_modules/REChainEXChange-v2-aa/governance.oscript') })
-			.with.agent({ v2Pool: path.join(__dirname, '../node_modules/REChainEXChange-v2-aa/pool.oscript') })
-			.with.agent({ v2REChainEXChangeFactory: path.join(__dirname, '../node_modules/REChainEXChange-v2-aa/factory.oscript') })
+			.with.agent({ v2Pool: path.join(__dirname, '../vendor/REChainEXChange-v2-aa/pool.oscript') })
 
 			.with.agent({ reserve_price_base: path.join(__dirname, '../REChainEXChange_reserve_price.oscript') })
 			.with.agent({ price_base: path.join(__dirname, '../price.oscript') })
@@ -212,43 +207,15 @@ describe('Various trades in perpetual', function () {
 	})
 
 	it('Bob defines GREChain-WBTC pool', async () => {
-		this.base_interest_rate = 0.3
-		this.swap_fee = 0.003
-		this.exit_fee = 0.005
-		this.leverage_profit_tax = 0.1
-		this.arb_profit_tax = 0.9
-		this.alpha = 0.5
-		this.beta = 1 - this.alpha
-		this.pool_leverage = 10
-		const { unit, error } = await this.bob.triggerAaWithData({
-			toAddress: this.network.agent.v2REChainEXChangeFactory,
-			amount: 10000,
-			data: {
-				x_asset: 'base',
-				y_asset: this.wbtc,
-				swap_fee: this.swap_fee,
-				exit_fee: this.exit_fee,
-				leverage_profit_tax: this.leverage_profit_tax,
-				arb_profit_tax: this.arb_profit_tax,
-				base_interest_rate: this.base_interest_rate,
-				alpha: this.alpha,
-				pool_leverage: this.pool_leverage,
-			},
+		// deploy minimal vendor pool directly
+		const { address, error } = await this.bob.deployAgent({
+			base_aa: this.network.agent.v2Pool,
+			params: { x_asset: 'base', y_asset: this.wbtc }
 		})
 		expect(error).to.be.null
-		expect(unit).to.be.validUnit
-
-		const { response } = await this.network.getAaResponseToUnitOnNode(this.bob, unit)
-		expect(response.response.error).to.be.undefined
-		expect(response.bounced).to.be.false
-		expect(response.response_unit).to.be.validUnit
-
-		this.REChainEXChange_aa = response.response.responseVars.address
+		this.REChainEXChange_aa = address
 		expect(this.REChainEXChange_aa).to.be.validAddress
-
-		const { vars } = await this.bob.readAAStateVars(this.REChainEXChange_aa)
-		this.lp_asset = vars.lp_shares.asset
-		expect(this.lp_asset).to.be.validUnit
+		// lp asset will be created on first add
 	})
 	
 	it('Alice adds liquidity to GREChain-WBTC pool', async () => {
@@ -270,6 +237,11 @@ describe('Various trades in perpetual', function () {
 		expect(response.bounced).to.be.false
 		expect(response.response_unit).to.be.validUnit
 		expect(JSON.parse(response.response.responseVars.event).type).to.be.equal("add")
+
+		// fetch lp asset now
+		const { vars } = await this.bob.readAAStateVars(this.REChainEXChange_aa)
+		this.lp_asset = vars.lp_shares.asset
+		expect(this.lp_asset).to.be.validUnit
 	})
 
 	it('Bob adds liquidity to GREChain-WBTC pool', async () => {
