@@ -9,6 +9,7 @@ const swaggerUi = require('swagger-ui-express');
 const yaml = require('yaml');
 const fs = require('fs').promises;
 const path = require('path');
+const WebSocketServer = require('./websocketServer');
 
 class EnhancedServer {
     constructor(config, tradingEngine, alertSystem, analyticsDashboard, riskManager) {
@@ -20,6 +21,9 @@ class EnhancedServer {
 
         this.app = express();
         this.port = config.port || 3000;
+
+        // Initialize WebSocket server
+        this.wsServer = new WebSocketServer(null, this.tradingEngine, this.alertSystem, this.analyticsDashboard, this.riskManager);
 
         // Middleware
         this.setupMiddleware();
@@ -690,9 +694,7 @@ class EnhancedServer {
      * Handle WebSocket upgrade
      */
     handleWebSocketUpgrade(req, res) {
-        // WebSocket implementation would go here
-        // For now, return 501 Not Implemented
-        res.status(501).json({ error: 'WebSocket support not implemented' });
+        res.status(400).json({ error: 'WebSocket upgrade not supported via HTTP GET' });
     }
 
     /**
@@ -769,6 +771,9 @@ class EnhancedServer {
                 });
             });
 
+            // Start WebSocket server
+            await this.wsServer.start(this.server);
+
             await this.alertSystem.logAlert('INFO', 'API Server started', {
                 port: this.port,
                 endpoints: [
@@ -796,6 +801,11 @@ class EnhancedServer {
                 await new Promise(resolve => {
                     this.server.close(resolve);
                 });
+            }
+
+            // Stop WebSocket server
+            if (this.wsServer) {
+                await this.wsServer.stop();
             }
 
             if (this.healthInterval) {

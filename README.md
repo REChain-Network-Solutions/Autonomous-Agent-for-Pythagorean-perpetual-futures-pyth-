@@ -1,6 +1,6 @@
 # REChain ® Autonomous Agent for Pythagorean Perpetual Futures
 
-A sophisticated autonomous trading agent implementing Pythagorean geometric risk distribution for perpetual futures trading.
+A sophisticated autonomous trading agent implementing Pythagorean geometric risk distribution for perpetual futures trading with real-time WebSocket capabilities.
 
 ## 🚀 Features
 
@@ -9,8 +9,9 @@ A sophisticated autonomous trading agent implementing Pythagorean geometric risk
 - **Automated Position Sizing**: Intelligent position management based on risk metrics
 - **Smart Contract Execution**: Direct interaction with DeFi protocols
 - **Adaptive Strategy Switching**: Dynamic strategy selection based on market conditions
-- **Real-time Monitoring**: Live dashboard and performance metrics
+- **Real-time Monitoring**: Live dashboard and performance metrics via WebSocket
 - **Advanced Risk Management**: VaR analysis, drawdown protection, correlation limits
+- **WebSocket Integration**: Real-time updates for trading activities, market data, and alerts
 
 ## 🏁 Quick Start
 
@@ -86,6 +87,17 @@ All API endpoints require authentication via API key in the `x-api-key` header.
 ### Real-time Streaming
 
 - **SSE Metrics Stream**: `GET /metrics/stream` (Server-Sent Events)
+- **WebSocket Connection**: `ws://localhost:3000` (Real-time updates)
+
+### WebSocket Events
+
+The WebSocket server provides real-time updates for:
+
+- **Trading Activities**: Position opens, closes, and modifications
+- **Market Data**: Price updates and market data changes
+- **Alerts**: System alerts and notifications
+- **Analytics**: Dashboard updates and performance metrics
+- **Risk Management**: Risk assessment updates and limit breaches
 
 For detailed API specification, see [`openapi.yaml`](openapi.yaml) or visit `/docs` when the server is running.
 

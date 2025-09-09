@@ -84,18 +84,17 @@ class AnalyticsDashboard extends EventEmitter {
      */
     setupEventListeners() {
         // Trading engine events
-        this.tradingEngine.on('positionOpened', (position) => {
-            this.onPositionOpened(position);
-        });
+        if (this.tradingEngine.on) {
+            this.tradingEngine.on('positionOpened', (position) => {
+                this.onPositionOpened(position);
+            });
 
-        this.tradingEngine.on('positionClosed', (position) => {
-            this.onPositionClosed(position);
-        });
+            this.tradingEngine.on('positionClosed', (position) => {
+                this.onPositionClosed(position);
+            });
+        }
 
-        // Alert system events
-        this.alertSystem.on('alert', (alert) => {
-            this.onAlert(alert);
-        });
+        // Note: Alert system doesn't emit events, alerts are handled directly
     }
 
     /**
