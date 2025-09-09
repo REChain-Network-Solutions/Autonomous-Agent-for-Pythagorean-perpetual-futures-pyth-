@@ -1,0 +1,880 @@
+openapi: 3.0.3
+info:
+  title: Autonomous Agent for Pythagorean Perpetual Futures API
+  description: REST API for the autonomous trading agent implementing Pythagorean geometric risk distribution
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+
+servers:
+  - url: http://localhost:3000
+    description: Development server
+  - url: https://api.example.com
+    description: Production server
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /health:
+    get:
+      summary: Get system health status
+      description: Returns the current health status of all system components
+      tags:
+        - Health
+      responses:
+        '200':
+          description: System health information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/trade:
+    post:
+      summary: Execute a trade
+      description: Execute a trading strategy for a specific asset
+      tags:
+        - Trading
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TradeRequest'
+      responses:
+        '200':
+          description: Trade executed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TradeResponse'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/positions:
+    get:
+      summary: Get current positions
+      description: Retrieve all current trading positions
+      tags:
+        - Trading
+      responses:
+        '200':
+          description: List of positions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PositionsResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/positions/{asset}:
+    delete:
+      summary: Close position
+      description: Close an open position for a specific asset
+      tags:
+        - Trading
+      parameters:
+        - name: asset
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Asset symbol (e.g., BTC, ETH)
+      responses:
+        '200':
+          description: Position closed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClosePositionResponse'
+        '404':
+          description: Position not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/market:
+    post:
+      summary: Update market data
+      description: Update market data for multiple assets
+      tags:
+        - Market Data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/MarketData'
+      responses:
+        '200':
+          description: Market data updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketDataUpdateResponse'
+
+  /api/market/{asset}:
+    get:
+      summary: Get market data
+      description: Get current market data for a specific asset
+      tags:
+        - Market Data
+      parameters:
+        - name: asset
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Asset symbol
+      responses:
+        '200':
+          description: Market data retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketData'
+        '404':
+          description: Asset not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/analytics/dashboard:
+    get:
+      summary: Get analytics dashboard
+      description: Retrieve comprehensive dashboard data
+      tags:
+        - Analytics
+      responses:
+        '200':
+          description: Dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardResponse'
+
+  /api/analytics/performance:
+    get:
+      summary: Get performance metrics
+      description: Retrieve trading performance metrics
+      tags:
+        - Analytics
+      responses:
+        '200':
+          description: Performance data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PerformanceResponse'
+
+  /api/analytics/chart/{type}:
+    get:
+      summary: Get chart data
+      description: Retrieve chart data for visualization
+      tags:
+        - Analytics
+      parameters:
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [portfolio, pnl, risk, performance]
+          description: Chart type
+        - name: timeframe
+          in: query
+          schema:
+            type: string
+            enum: [1h, 4h, 1d, 1w, 1m]
+            default: 1d
+          description: Timeframe for chart data
+      responses:
+        '200':
+          description: Chart data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChartResponse'
+
+  /api/risk/assessment:
+    get:
+      summary: Get risk assessment
+      description: Retrieve current risk assessment
+      tags:
+        - Risk Management
+      responses:
+        '200':
+          description: Risk assessment data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskAssessmentResponse'
+
+  /api/risk/limits:
+    get:
+      summary: Get risk limits
+      description: Retrieve current risk limits and thresholds
+      tags:
+        - Risk Management
+      responses:
+        '200':
+          description: Risk limits data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskLimitsResponse'
+
+  /api/risk/emergency-stop:
+    post:
+      summary: Trigger emergency stop
+      description: Immediately stop all trading activities
+      tags:
+        - Risk Management
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: Reason for emergency stop
+      responses:
+        '200':
+          description: Emergency stop triggered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmergencyStopResponse'
+
+  /api/alerts:
+    get:
+      summary: Get alerts
+      description: Retrieve active system alerts
+      tags:
+        - Alerts
+      parameters:
+        - name: level
+          in: query
+          schema:
+            type: string
+            enum: [INFO, WARNING, ERROR, CRITICAL]
+          description: Filter by alert level
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          description: Maximum number of alerts to return
+      responses:
+        '200':
+          description: List of alerts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertsResponse'
+
+  /api/alerts/stats:
+    get:
+      summary: Get alert statistics
+      description: Retrieve alert statistics and metrics
+      tags:
+        - Alerts
+      responses:
+        '200':
+          description: Alert statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertStatsResponse'
+
+  /api/strategies:
+    get:
+      summary: Get available strategies
+      description: Retrieve list of available trading strategies
+      tags:
+        - Strategies
+      responses:
+        '200':
+          description: List of strategies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StrategiesResponse'
+
+  /api/strategies/{name}:
+    post:
+      summary: Execute strategy
+      description: Execute a specific trading strategy
+      tags:
+        - Strategies
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [momentum, mean_reversion, breakout, scalping, swing]
+          description: Strategy name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                asset:
+                  type: string
+                  description: Asset symbol
+                signal:
+                  type: string
+                  enum: [BUY, SELL]
+                  description: Trading signal
+              required:
+                - asset
+                - signal
+      responses:
+        '200':
+          description: Strategy executed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StrategyExecutionResponse'
+
+  /api/config:
+    get:
+      summary: Get configuration
+      description: Retrieve current system configuration
+      tags:
+        - Configuration
+      responses:
+        '200':
+          description: System configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+    put:
+      summary: Update configuration
+      description: Update system configuration
+      tags:
+        - Configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Configuration updates
+      responses:
+        '200':
+          description: Configuration updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigUpdateResponse'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        uptime:
+          type: number
+        memory:
+          type: object
+        version:
+          type: string
+        components:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              status:
+                type: string
+                enum: [active, inactive]
+              info:
+                type: object
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: string
+
+    TradeRequest:
+      type: object
+      properties:
+        asset:
+          type: string
+          description: Asset symbol (e.g., BTC, ETH)
+        side:
+          type: string
+          enum: [BUY, SELL]
+          description: Trade side
+        size:
+          type: number
+          minimum: 0
+          description: Position size
+        strategy:
+          type: string
+          enum: [momentum, mean_reversion, breakout, scalping, swing]
+          description: Trading strategy
+      required:
+        - asset
+        - side
+        - size
+
+    TradeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        trade:
+          $ref: '#/components/schemas/Position'
+        message:
+          type: string
+
+    PositionsResponse:
+      type: object
+      properties:
+        positions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Position'
+        summary:
+          type: object
+          properties:
+            totalPositions:
+              type: integer
+            totalValue:
+              type: number
+            totalPnL:
+              type: number
+
+    Position:
+      type: object
+      properties:
+        id:
+          type: string
+        asset:
+          type: string
+        side:
+          type: string
+          enum: [LONG, SHORT]
+        size:
+          type: number
+        entryPrice:
+          type: number
+        currentPrice:
+          type: number
+        stopLoss:
+          type: number
+        takeProfit:
+          type: number
+        pnl:
+          type: number
+        pnlPercent:
+          type: number
+        status:
+          type: string
+          enum: [OPEN, CLOSED, PENDING]
+        entryTime:
+          type: string
+          format: date-time
+        exitTime:
+          type: string
+          format: date-time
+
+    ClosePositionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        closedPosition:
+          $ref: '#/components/schemas/Position'
+        message:
+          type: string
+
+    MarketData:
+      type: object
+      properties:
+        asset:
+          type: string
+        price:
+          type: number
+        bid:
+          type: number
+        ask:
+          type: number
+        volume:
+          type: number
+        timestamp:
+          type: string
+          format: date-time
+      required:
+        - asset
+        - price
+
+    MarketDataUpdateResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        updated:
+          type: integer
+        message:
+          type: string
+
+    DashboardResponse:
+      type: object
+      properties:
+        portfolio:
+          type: object
+          properties:
+            totalValue:
+              type: number
+            cash:
+              type: number
+            marginUsed:
+              type: number
+            positions:
+              type: integer
+        performance:
+          type: object
+          properties:
+            totalTrades:
+              type: integer
+            winningTrades:
+              type: integer
+            losingTrades:
+              type: integer
+            winRate:
+              type: number
+            totalPnL:
+              type: number
+            sharpeRatio:
+              type: number
+        risk:
+          type: object
+          properties:
+            currentDrawdown:
+              type: number
+            var95:
+              type: number
+            maxDrawdown:
+              type: number
+        market:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/MarketData'
+
+    PerformanceResponse:
+      type: object
+      properties:
+        totalTrades:
+          type: integer
+        winningTrades:
+          type: integer
+        losingTrades:
+          type: integer
+        winRate:
+          type: number
+        totalPnL:
+          type: number
+        averageWin:
+          type: number
+        averageLoss:
+          type: number
+        largestWin:
+          type: number
+        largestLoss:
+          type: number
+        sharpeRatio:
+          type: number
+        maxDrawdown:
+          type: number
+        recoveryFactor:
+          type: number
+
+    ChartResponse:
+      type: object
+      properties:
+        labels:
+          type: array
+          items:
+            type: string
+        data:
+          type: array
+          items:
+            type: number
+        metadata:
+          type: object
+          properties:
+            timeframe:
+              type: string
+            asset:
+              type: string
+            type:
+              type: string
+
+    RiskAssessmentResponse:
+      type: object
+      properties:
+        overallRisk:
+          type: string
+          enum: [LOW, MEDIUM, HIGH, CRITICAL]
+        riskFactors:
+          type: array
+          items:
+            type: object
+            properties:
+              factor:
+                type: string
+              level:
+                type: string
+                enum: [LOW, MEDIUM, HIGH, CRITICAL]
+              value:
+                type: number
+              threshold:
+                type: number
+        recommendations:
+          type: array
+          items:
+            type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    RiskLimitsResponse:
+      type: object
+      properties:
+        drawdown:
+          type: object
+          properties:
+            current:
+              type: number
+            limit:
+              type: number
+            status:
+              type: string
+        dailyLoss:
+          type: object
+          properties:
+            current:
+              type: number
+            limit:
+              type: number
+            status:
+              type: string
+        var:
+          type: object
+          properties:
+            current:
+              type: number
+            limit:
+              type: number
+            status:
+              type: string
+        correlation:
+          type: object
+          properties:
+            current:
+              type: number
+            limit:
+              type: number
+            status:
+              type: string
+
+    EmergencyStopResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    AlertsResponse:
+      type: object
+      properties:
+        alerts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Alert'
+        total:
+          type: integer
+
+    Alert:
+      type: object
+      properties:
+        id:
+          type: string
+        level:
+          type: string
+          enum: [INFO, WARNING, ERROR, CRITICAL]
+        message:
+          type: string
+        data:
+          type: object
+        timestamp:
+          type: string
+          format: date-time
+        acknowledged:
+          type: boolean
+
+    AlertStatsResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        byLevel:
+          type: object
+          properties:
+            INFO:
+              type: integer
+            WARNING:
+              type: integer
+            ERROR:
+              type: integer
+            CRITICAL:
+              type: integer
+        recent:
+          type: array
+          items:
+            $ref: '#/components/schemas/Alert'
+        timeRange:
+          type: string
+
+    StrategiesResponse:
+      type: object
+      properties:
+        strategies:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              description:
+                type: string
+              parameters:
+                type: array
+                items:
+                  type: string
+
+    StrategyExecutionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        strategy:
+          type: string
+        result:
+          type: object
+        message:
+          type: string
+
+    ConfigResponse:
+      type: object
+      properties:
+        server:
+          type: object
+          properties:
+            port:
+              type: integer
+            corsOrigins:
+              type: array
+              items:
+                type: string
+        trading:
+          type: object
+          properties:
+            initialCash:
+              type: number
+            maxPositionSize:
+              type: number
+            maxDrawdown:
+              type: number
+            stopLossPercent:
+              type: number
+            takeProfitPercent:
+              type: number
+            leverage:
+              type: number
+        risk:
+          type: object
+          properties:
+            maxDailyLoss:
+              type: number
+            maxLeverage:
+              type: number
+            varLimit:
+              type: number
+            correlationLimit:
+              type: number
+        alerts:
+          type: object
+          properties:
+            errorRateThreshold:
+              type: number
+            responseTimeThreshold:
+              type: number
+            webhookUrl:
+              type: string
+
+    ConfigUpdateResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        updated:
+          type: object

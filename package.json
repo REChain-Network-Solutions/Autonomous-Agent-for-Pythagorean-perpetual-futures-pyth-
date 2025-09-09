@@ -3,22 +3,37 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "start": "node src/main.js",
+    "dev": "NODE_ENV=development node src/main.js",
     "test": "mocha",
+    "test:watch": "mocha --watch",
+    "test:coverage": "nyc mocha",
     "test:all": "mocha test/*.test.oscript.js",
-    "lint": "node ./node_modules/.bin/eslint --ext .js --max-warnings=0 test",
-    "start": "node src/server.js"
+    "lint": "eslint --ext .js src test",
+    "lint:fix": "eslint --ext .js --fix src test",
+    "build": "echo 'No build step required for Node.js application'",
+    "docker:build": "docker build -t pythagorean-agent .",
+    "docker:run": "docker run -p 3000:3000 pythagorean-agent",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "deploy": "./scripts/deploy.sh",
+    "setup": "./scripts/dev-setup.sh",
+    "docs": "echo 'API docs available at http://localhost:3000/api-docs'",
+    "health": "curl -f http://localhost:3000/health || exit 1"
   },
   "engines": {
     "node": ">=8"
   },
   "dependencies": {
+    "aa-testkit": "git+https://github.com/valyakin/aa-testkit.git",
     "chai": "^6.0.1",
     "chai-deep-closeto": "^0.1.1",
-    "mocha": "^11.7.1",
-    "aa-testkit": "git+https://github.com/valyakin/aa-testkit.git",
-    "express": "^4.19.2",
     "cors": "^2.8.5",
     "ethers": "^6.13.3",
+    "express": "^4.19.2",
+    "mocha": "^11.7.1",
+    "ocore": "git+https://github.com/byteball/ocore.git",
     "swagger-ui-express": "^5.0.1",
     "yaml": "^2.5.1"
   },
@@ -30,7 +45,8 @@
     "eslint-plugin-mocha": "^11.1.0",
     "eslint-plugin-node": "^11.1.0",
     "eslint-plugin-promise": "^7.2.1",
-    "eslint-plugin-standard": "^5.0.0"
+    "eslint-plugin-standard": "^5.0.0",
+    "supertest": "^7.1.4"
   },
   "resolutions": {
     "chalk": "^3.0.0",

@@ -165,6 +165,9 @@ function shutdown() {
 process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
 
+// Export server for testing to avoid port conflicts
+module.exports = server
+
 
 // web3 wallet auth (nonce + EIP-191 verify)
 const walletSessions = new Map()

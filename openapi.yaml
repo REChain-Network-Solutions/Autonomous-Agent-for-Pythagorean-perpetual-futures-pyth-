@@ -1,69 +1,718 @@
 openapi: 3.0.3
 info:
-  title: Pythagorean Perpetual Agent API
+  title: REChain Autonomous Agent for Pythagorean Perpetual Futures API
+  description: REST API for the autonomous trading agent implementing Pythagorean geometric risk distribution
   version: 0.1.0
+  contact:
+    name: REChain Network Solutions
+    url: https://rechain.network
+    email: support@rechain.network
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
 servers:
-  - url: /
+  - url: http://localhost:3000
+    description: Development server
+  - url: https://api.rechain.network
+    description: Production server
+
+tags:
+  - name: Health
+    description: Health check endpoints
+  - name: Metrics
+    description: Trading metrics and performance monitoring
+  - name: Admin
+    description: Administrative operations
+  - name: Authentication
+    description: Web3 and DID authentication
+  - name: Webhooks
+    description: Webhook management
+
 paths:
   /healthz:
     get:
-      summary: Liveness
-      responses:
-        '200': { description: OK }
-  /readyz:
-    get:
-      summary: Readiness
-      responses:
-        '200': { description: OK }
-  /metrics/status:
-    get:
-      summary: Status metrics
+      tags:
+        - Health
+      summary: Liveness probe
+      description: Check if the service is alive
       responses:
         '200':
-          description: OK
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2023-01-01T00:00:00Z"
+
+  /readyz:
+    get:
+      tags:
+        - Health
+      summary: Readiness probe
+      description: Check if the service is ready to handle requests
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ready"
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2023-01-01T00:00:00Z"
+
+  /metrics/status:
+    get:
+      tags:
+        - Metrics
+      summary: Get operational status metrics
+      description: Returns current operational status and performance metrics
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Status metrics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsStatus'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
   /metrics/positions:
     get:
-      summary: Positions
+      tags:
+        - Metrics
+      summary: Get current positions
+      description: Returns current trading positions and exposure breakdown
+      security:
+        - ApiKeyAuth: []
       responses:
-        '200': { description: OK }
+        '200':
+          description: Positions retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Positions'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
   /metrics/performance:
     get:
-      summary: Performance
-      responses:
-        '200': { description: OK }
-  /admin/trigger-rebalance:
-    post:
-      summary: Trigger rebalance
+      tags:
+        - Metrics
+      summary: Get performance metrics
+      description: Returns historical performance and PnL summary
       security:
-        - Admin: []
+        - ApiKeyAuth: []
       responses:
-        '200': { description: OK }
-  /admin/update-metrics:
-    post:
-      summary: Update metrics (file/stub providers)
+        '200':
+          description: Performance metrics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Performance'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  /metrics/stream:
+    get:
+      tags:
+        - Metrics
+      summary: Metrics stream (SSE)
+      description: Server-Sent Events stream for real-time metrics updates
       security:
-        - Admin: []
+        - ApiKeyAuth: []
       responses:
-        '200': { description: OK }
+        '200':
+          description: SSE connection established
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /admin/refresh-metrics:
+    post:
+      tags:
+        - Admin
+      summary: Refresh metrics manually
+      description: Manually trigger metrics refresh (if provider supports it)
+      security:
+        - AdminAuth: []
+      responses:
+        '200':
+          description: Metrics refresh triggered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Metrics refresh initiated"
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  /admin/hooks:
+    post:
+      tags:
+        - Webhooks
+      summary: Register webhook
+      description: Register a new webhook for event notifications
+      security:
+        - AdminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                  format: uri
+                  example: "https://your-webhook-endpoint.com"
+      responses:
+        '201':
+          description: Webhook registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    example: "hook-123"
+                  url:
+                    type: string
+                    example: "https://your-webhook-endpoint.com"
+                  createdAt:
+                    type: string
+                    format: date-time
+                    example: "2023-01-01T00:00:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+    get:
+      tags:
+        - Webhooks
+      summary: List webhooks
+      description: Get list of all registered webhooks
+      security:
+        - AdminAuth: []
+      responses:
+        '200':
+          description: Webhooks retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      example: "hook-123"
+                    url:
+                      type: string
+                      example: "https://your-webhook-endpoint.com"
+                    createdAt:
+                      type: string
+                      format: date-time
+                      example: "2023-01-01T00:00:00Z"
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+    delete:
+      tags:
+        - Webhooks
+      summary: Remove webhook
+      description: Remove a registered webhook
+      security:
+        - AdminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                  format: uri
+                  example: "https://your-webhook-endpoint.com"
+      responses:
+        '200':
+          description: Webhook removed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Webhook removed"
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  /admin/emit:
+    post:
+      tags:
+        - Admin
+      summary: Emit custom event
+      description: Emit a custom event for testing or integration
+      security:
+        - AdminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                event:
+                  type: string
+                  example: "custom.event.name"
+                payload:
+                  type: object
+                  example: {"key": "value"}
+      responses:
+        '200':
+          description: Event emitted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  event:
+                    type: string
+                    example: "custom.event.name"
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  /admin/config:
+    get:
+      tags:
+        - Admin
+      summary: Get safe configuration view
+      description: Get configuration with sensitive data redacted
+      security:
+        - AdminAuth: []
+      responses:
+        '200':
+          description: Configuration retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  server:
+                    type: object
+                    properties:
+                      port:
+                        type: integer
+                        example: 3000
+                  trading:
+                    type: object
+                    properties:
+                      initialCash:
+                        type: number
+                        example: 100000
+                      maxPositionSize:
+                        type: number
+                        example: 0.1
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  /admin/sessions:
+    get:
+      tags:
+        - Admin
+      summary: List active sessions
+      description: Get list of active sessions with metadata
+      security:
+        - AdminAuth: []
+      responses:
+        '200':
+          description: Sessions retrieved
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    sessionId:
+                      type: string
+                      example: "session-123"
+                    exp:
+                      type: string
+                      format: date-time
+                      example: "2023-01-01T00:00:00Z"
+                    role:
+                      type: string
+                      example: "user"
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+    delete:
+      tags:
+        - Admin
+      summary: Remove session
+      description: Remove an active session
+      security:
+        - AdminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sessionId:
+                  type: string
+                  example: "session-123"
+      responses:
+        '200':
+          description: Session removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Session removed"
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  /admin/elevate:
+    post:
+      tags:
+        - Admin
+      summary: Elevate session to admin
+      description: Grant admin privileges to a session
+      security:
+        - AdminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sessionId:
+                  type: string
+                  example: "session-123"
+      responses:
+        '200':
+          description: Session elevated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessionId:
+                    type: string
+                    example: "session-123"
+                  role:
+                    type: string
+                    example: "admin"
+                  exp:
+                    type: string
+                    format: date-time
+                    example: "2023-01-01T00:00:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
   /web3/nonce:
     get:
+      tags:
+        - Authentication
       summary: Get wallet nonce
+      description: Generate a nonce for wallet authentication
       responses:
-        '200': { description: OK }
+        '200':
+          description: Nonce generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    example: "req-123"
+                  nonce:
+                    type: string
+                    example: "random-nonce-string"
+
   /web3/verify:
     post:
+      tags:
+        - Authentication
       summary: Verify wallet signature
+      description: Verify wallet signature and create session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                  example: "req-123"
+                address:
+                  type: string
+                  example: "0xWalletAddress"
+                signature:
+                  type: string
+                  example: "signature-string"
+                message:
+                  type: string
+                  example: "message-containing-nonce"
       responses:
-        '200': { description: OK }
+        '200':
+          description: Signature verified, session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessionId:
+                    type: string
+                    example: "session-123"
+                  exp:
+                    type: string
+                    format: date-time
+                    example: "2023-01-01T00:00:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+
   /did/verify:
     post:
+      tags:
+        - Authentication
       summary: Verify DID (stub)
+      description: DID authentication stub (for testing)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                did:
+                  type: string
+                  example: "did:example:123"
+                proof:
+                  type: string
+                  example: "stub-proof"
       responses:
-        '200': { description: OK }
+        '200':
+          description: DID verified (stub), session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessionId:
+                    type: string
+                    example: "session-123"
+                  exp:
+                    type: string
+                    format: date-time
+                    example: "2023-01-01T00:00:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+
 components:
   securitySchemes:
-    Admin:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: API key for general authentication
+    AdminAuth:
       type: apiKey
       in: header
       name: x-admin-token
+      description: Admin token for privileged operations
 
+  responses:
+    UnauthorizedError:
+      description: Authentication required or invalid
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    example: "UNAUTHORIZED"
+                  message:
+                    type: string
+                    example: "Authentication required"
+    ForbiddenError:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    example: "FORBIDDEN"
+                  message:
+                    type: string
+                    example: "Insufficient permissions"
+    BadRequestError:
+      description: Invalid request data
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    example: "BAD_REQUEST"
+                  message:
+                    type: string
+                    example: "Invalid request data"
+                  details:
+                    type: object
+
+  schemas:
+    MetricsStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "operational"
+        uptime:
+          type: number
+          example: 12345.67
+        activeStrategies:
+          type: integer
+          example: 3
+        lastUpdate:
+          type: string
+          format: date-time
+          example: "2023-01-01T00:00:00Z"
+
+    Positions:
+      type: array
+      items:
+        type: object
+        properties:
+          asset:
+            type: string
+            example: "BTC"
+          side:
+            type: string
+            enum: ["LONG", "SHORT"]
+            example: "LONG"
+          size:
+            type: number
+            example: 100
+          entryPrice:
+            type: number
+            example: 50000
+          currentPrice:
+            type: number
+            example: 51000
+          pnl:
+            type: number
+            example: 1000
+
+    Performance:
+      type: object
+      properties:
+        totalPnl:
+          type: number
+          example: 5000
+        winRate:
+          type: number
+          example: 0.65
+        sharpeRatio:
+          type: number
+          example: 1.2
+        maxDrawdown:
+          type: number
+          example: 0.15
+        totalTrades:
+          type: integer
+          example: 100
+        successfulTrades:
+          type: integer
+          example: 65

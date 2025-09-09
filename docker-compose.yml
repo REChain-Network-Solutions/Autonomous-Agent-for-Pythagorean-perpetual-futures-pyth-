@@ -1,17 +1,79 @@
-version: "3.9"
+version: '3.8'
+
 services:
-  app:
+  pythagorean-agent:
     build: .
+    container_name: pythagorean-agent
     ports:
       - "3000:3000"
     environment:
-      - PORT=3000
-      - METRICS_PROVIDER=${METRICS_PROVIDER:-inmemory}
-      - METRICS_FILE=${METRICS_FILE:-}
-      - AA_HTTP_URL=${AA_HTTP_URL:-}
-      - AA_POLL_MS=${AA_POLL_MS:-10000}
-      - AA_ADDRESSES=${AA_ADDRESSES:-}
-      - ADMIN_TOKEN=${ADMIN_TOKEN:-}
-      - SESSION_SECRET=${SESSION_SECRET:-dev-secret}
-      - SESSION_TTL=${SESSION_TTL:-86400}
+      - NODE_ENV=production
+      - API_KEY=${API_KEY:-default-api-key-change-in-production}
+      - WEBHOOK_URL=${WEBHOOK_URL}
+      - DATABASE_URL=${DATABASE_URL}
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./config:/app/config:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - trading-network
 
+  # Optional: PostgreSQL database (uncomment if needed)
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: pythagorean-db
+  #   environment:
+  #     POSTGRES_DB: pythagorean_agent
+  #     POSTGRES_USER: trading_user
+  #     POSTGRES_PASSWORD: ${DB_PASSWORD}
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #     - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+  #   ports:
+  #     - "5432:5432"
+  #   restart: unless-stopped
+  #   networks:
+  #     - trading-network
+
+  # Optional: Redis for caching (uncomment if needed)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: pythagorean-cache
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+  #   restart: unless-stopped
+  #   networks:
+  #     - trading-network
+
+  # Optional: Nginx reverse proxy (uncomment if needed)
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: pythagorean-proxy
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./nginx/ssl:/etc/nginx/ssl:ro
+  #   depends_on:
+  #     - pythagorean-agent
+  #   restart: unless-stopped
+  #   networks:
+  #     - trading-network
+
+networks:
+  trading-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:

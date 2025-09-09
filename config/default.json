@@ -1,0 +1,52 @@
+{
+  "server": {
+    "port": 3000,
+    "apiKey": "your-api-key-here",
+    "corsOrigins": [
+      "http://localhost:3000",
+      "http://localhost:3001"
+    ]
+  },
+  "trading": {
+    "initialCash": 100000,
+    "maxPositionSize": 0.1,
+    "maxDrawdown": 0.2,
+    "stopLossPercent": 0.05,
+    "takeProfitPercent": 0.1,
+    "leverage": 1,
+    "minOrderSize": 10,
+    "maxOrdersPerAsset": 3
+  },
+  "risk": {
+    "maxDailyLoss": 0.1,
+    "maxLeverage": 5,
+    "maxConcentration": 0.25,
+    "varLimit": 0.15,
+    "stressTestThreshold": 0.3,
+    "correlationLimit": 0.8,
+    "liquidityThreshold": 0.7
+  },
+  "alerts": {
+    "errorRateThreshold": 0.05,
+    "responseTimeThreshold": 5000,
+    "memoryUsageThreshold": 0.8,
+    "cpuUsageThreshold": 0.9,
+    "diskSpaceThreshold": 0.9,
+    "webhookUrl": null
+  },
+  "analytics": {
+    "refreshInterval": 5000,
+    "maxHistoryPoints": 1000,
+    "monitoringInterval": 30000
+  },
+  "database": {
+    "type": "sqlite",
+    "path": "./data/agent.db",
+    "backupInterval": 3600000
+  },
+  "logging": {
+    "level": "info",
+    "maxFiles": 30,
+    "maxSize": "10m"
+  }
+}

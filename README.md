@@ -1,133 +1,151 @@
 # REChain ® Autonomous Agent for Pythagorean Perpetual Futures
 
-This repository hosts a smart agent that performs autonomous perpetual trading using a geometric risk distribution model.
+A sophisticated autonomous trading agent implementing Pythagorean geometric risk distribution for perpetual futures trading.
 
-## ✅ Features
+## 🚀 Features
 
-- Pythagorean geometric model for risk balance
-- Oracle integrations (Katya, Pyth)
-- Automated position sizing
-- Smart contract execution
-- Adaptive strategy switching
+- **Pythagorean Risk Model**: Geometric distribution of risk across positions
+- **Oracle Integrations**: Katya, Pyth, and custom oracle support
+- **Automated Position Sizing**: Intelligent position management based on risk metrics
+- **Smart Contract Execution**: Direct interaction with DeFi protocols
+- **Adaptive Strategy Switching**: Dynamic strategy selection based on market conditions
+- **Real-time Monitoring**: Live dashboard and performance metrics
+- **Advanced Risk Management**: VaR analysis, drawdown protection, correlation limits
 
-## 🧪 Usage
+## 🏁 Quick Start
+
+### Prerequisites
+- Node.js >= 14.0.0
+- npm or yarn
+
+### Installation
 
 ```bash
 git clone https://github.com/REChain-Network-Solutions/Autonomous-Agent-for-Pythagorean-perpetual-futures-pyth-.git
 cd Autonomous-Agent-for-Pythagorean-perpetual-futures-pyth-
 npm install
+```
+
+### Configuration
+
+Copy the environment template and configure your settings:
+
+```bash
+cp .env.example .env
+```
+
+Edit the `.env` file with your specific configuration.
+
+### Running the Agent
+
+```bash
 npm start
-
-### Env
-
-Copy `env.example` to `.env` and adjust:
-
-```
-cp env.example .env
 ```
 
-Optional env:
+The agent will start on http://localhost:3000 (default port).
 
-- `ADMIN_TOKEN`: token to access `/admin/*` endpoints (send in `x-admin-token` header)
-- `METRICS_FILE`: path to JSON file for persistent metrics (enables file provider)
-- `METRICS_PROVIDER`: one of `inmemory` (default), `file`, `aa-stub`
-- `AA_ADDRESSES`: comma-separated AA addresses for stub provider
-  - also used by `aa-http`
-- `AA_HTTP_URL`: base URL of AA state API (for `aa-http` provider), must return JSON with `{ positions, performance }`
-- `AA_POLL_MS`: polling interval in ms (default 10000)
+## ⚙️ Configuration
 
-### Web3 wallet endpoints
-### OpenAPI / Swagger
+See `.env.example` for comprehensive configuration options. Key environment variables include:
 
-- Spec: `openapi.yaml`
-- UI: `/docs`
+- `API_KEY`: Secret API key for authentication
+- `PORT`: Server port (default: 3000)
+- `INITIAL_CASH`: Initial trading capital
+- `MAX_POSITION_SIZE`: Maximum position size per trade
+- `MAX_DRAWDOWN`: Maximum allowed drawdown percentage
+- `STOP_LOSS_PERCENT`: Stop-loss percentage
+- `TAKE_PROFIT_PERCENT`: Take-profit percentage
+- `LEVERAGE`: Trading leverage
 
-### Docker
-### SSE
+## 📖 API Documentation
 
-- Live stream: GET `/metrics/stream` (Server-Sent Events), событие `metrics` каждые 5s.
+### Authentication
+All API endpoints require authentication via API key in the `x-api-key` header.
 
-### Admin helpers
+### Core Endpoints
 
-- POST `/admin/refresh-metrics` — ручное обновление (если провайдер поддерживает refresh)
-- POST `/admin/hooks` — регистрирует webhook { url }
-- DELETE `/admin/hooks` — удаляет webhook { url }
-- GET `/admin/hooks` — список
-- POST `/admin/emit` — отправляет произвольное событие { event, payload }
-- GET `/admin/config` — безопасный просмотр конфигурации
-- GET `/admin/sessions` — список сессий (мета)
-- DELETE `/admin/sessions` — удалить сессию { sessionId }
+- **Health Check**: `GET /healthz`
+- **Readiness Check**: `GET /readyz`
+- **Metrics Status**: `GET /metrics/status`
+- **Positions**: `GET /metrics/positions`
+- **Performance**: `GET /metrics/performance`
 
-События:
-- rebalance, metrics.update, metrics.refresh
-- auth.web3, auth.did
-- metrics.tick (включить WEBHOOK_ON_TICK=true)
+### Admin Endpoints (require admin token)
 
-Безопасность вебхуков:
-- Подпись `x-signature: sha256=<hmac>` где `hmac = HMAC_SHA256(WEBHOOK_SECRET, x-id + x-ts + body)`
-- Идентификатор `x-id`, метка времени `x-ts` для дедупликации на приёмнике
-- Ретраи: WEBHOOK_MAX_RETRIES (по умолчанию 3) с задержкой WEBHOOK_RETRY_DELAY_MS
+- **Manual Refresh**: `POST /admin/refresh-metrics`
+- **Webhook Management**: `POST/DELETE/GET /admin/hooks`
+- **Event Emission**: `POST /admin/emit`
+- **Configuration View**: `GET /admin/config`
+- **Session Management**: `GET/DELETE /admin/sessions`
 
-- Build: `docker build -t pyth-aa .`
-- Run: `docker run -p 3000:3000 --env-file .env pyth-aa`
-- Compose: `docker-compose up --build`
+### Web3 Authentication
 
-- GET `/web3/nonce` → { id, nonce }
-- POST `/web3/verify` with JSON { id, address, signature, message }
-  - message must contain the issued `nonce`
+- **Nonce Generation**: `GET /web3/nonce`
+- **Signature Verification**: `POST /web3/verify`
 
-### Sessions and roles
+### Real-time Streaming
 
-- Upon /web3/verify or /did/verify you receive `{ sessionId, exp }`.
-- Send `x-session-id: <sessionId>` header to access protected endpoints.
-- Admin role can be granted via `POST /admin/elevate` with `x-admin-token` header and body `{ "sessionId": "..." }`.
+- **SSE Metrics Stream**: `GET /metrics/stream` (Server-Sent Events)
 
-### DID (stub)
+For detailed API specification, see [`openapi.yaml`](openapi.yaml) or visit `/docs` when the server is running.
 
-- POST `/did/verify` with JSON { did, proof } → issues a user session (stub; no real DID validation yet).
-```
+## 🐳 Docker Deployment
 
-## 🛠 Environment
-
-See `.env.example` for configuration.
-
-## 📖 License
-
-MIT — REChain Network Solutions
-
-# Autonomous Agent for Pythagorean perpetual futures (pyth)
-
-AA oscript:
+### Build the Image
 
 ```bash
-./agent.aa
+docker build -t pyth-aa .
 ```
 
-Test file:
+### Run the Container
 
 ```bash
-./test/agent.test.oscript.js
+docker run -p 3000:3000 --env-file .env pyth-aa
 ```
 
-## Usage
-
-### Run test
+### Docker Compose
 
 ```bash
-npm run test
-# or
-yarn test
+docker-compose up --build
 ```
 
-### Lint test files
+## 🧪 Testing
+
+### Run All Tests
+
+```bash
+npm test
+```
+
+### Run Specific Test Suites
+
+```bash
+npm test -- test/alertSystem.test.js
+npm test -- test/api.test.js
+npm test -- test/tradingEngine.test.js
+```
+
+### Lint Code
 
 ```bash
 npm run lint
-# or
-yarn lint
 ```
 
-## Donations
+## 📄 License
 
-We accept donations through [KatyaAI](https://KatyaAI.org) and forward a portion of the donations to other open-source projects that made Pyth possible.
+MIT License - see [LICENSE](LICENSE) for details.
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
+
+## 💬 Support
+
+- [Telegram](https://t.me/REChainDAO)
+- [Discord](https://discord.gg/rechain)
+- [GitHub Issues](https://github.com/REChain-Network-Solutions/Autonomous-Agent-for-Pythagorean-perpetual-futures-pyth-/issues)
+
+## ❤️ Donations
+
+We accept donations through [KatyaAI](https://KatyaAI.org) and forward a portion to other open-source projects that made Pyth possible.
 
