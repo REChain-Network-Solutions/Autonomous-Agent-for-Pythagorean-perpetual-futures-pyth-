@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "aa-testkit": "git+https://github.com/valyakin/aa-testkit.git",
-    "chai": "^6.0.1",
+    "chai": "^6.2.0",
     "chai-deep-closeto": "^0.1.1",
     "cors": "^2.8.5",
     "ethers": "^6.13.3",
