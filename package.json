@@ -32,14 +32,14 @@
     "cors": "^2.8.5",
     "ethers": "^6.13.3",
     "express": "^5.1.0",
-    "mocha": "^11.7.1",
+    "mocha": "^11.7.4",
     "ocore": "git+https://github.com/byteball/ocore.git",
     "swagger-ui-express": "^5.0.1",
     "ws": "^8.18.3",
     "yaml": "^2.5.1"
   },
   "devDependencies": {
-    "eslint": "^9.36.0",
+    "eslint": "^9.37.0",
     "eslint-config-standard": "^17.1.0",
     "eslint-plugin-chai-friendly": "^1.1.0",
     "eslint-plugin-import": "^2.18.2",
