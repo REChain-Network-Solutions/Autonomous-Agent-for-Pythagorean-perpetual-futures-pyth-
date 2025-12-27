@@ -30,7 +30,7 @@
     "chai": "^6.2.1",
     "chai-deep-closeto": "^0.1.1",
     "cors": "^2.8.5",
-    "ethers": "^6.13.3",
+    "ethers": "^6.16.0",
     "express": "^5.2.1",
     "mocha": "^11.7.5",
     "ocore": "git+https://github.com/byteball/ocore.git",
@@ -39,7 +39,7 @@
     "yaml": "^2.8.2"
   },
   "devDependencies": {
-    "eslint": "^9.39.1",
+    "eslint": "^9.39.2",
     "eslint-config-standard": "^17.1.0",
     "eslint-plugin-chai-friendly": "^1.1.0",
     "eslint-plugin-import": "^2.18.2",
