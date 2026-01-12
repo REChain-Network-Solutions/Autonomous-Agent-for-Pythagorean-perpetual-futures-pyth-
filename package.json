@@ -35,7 +35,7 @@
     "mocha": "^11.7.5",
     "ocore": "git+https://github.com/byteball/ocore.git",
     "swagger-ui-express": "^5.0.1",
-    "ws": "^8.18.3",
+    "ws": "^8.19.0",
     "yaml": "^2.8.2"
   },
   "devDependencies": {
@@ -47,7 +47,7 @@
     "eslint-plugin-node": "^11.1.0",
     "eslint-plugin-promise": "^7.2.1",
     "eslint-plugin-standard": "^5.0.0",
-    "supertest": "^7.1.4"
+    "supertest": "^7.2.2"
   },
   "resolutions": {
     "chalk": "^3.0.0",
