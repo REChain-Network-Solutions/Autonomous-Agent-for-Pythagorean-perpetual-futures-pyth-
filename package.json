@@ -29,7 +29,7 @@
     "aa-testkit": "git+https://github.com/valyakin/aa-testkit.git",
     "chai": "^6.2.2",
     "chai-deep-closeto": "^0.1.1",
-    "cors": "^2.8.5",
+    "cors": "^2.8.6",
     "ethers": "^6.16.0",
     "express": "^5.2.1",
     "mocha": "^11.7.5",
